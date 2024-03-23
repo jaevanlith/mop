@@ -11,14 +11,14 @@ data_type: [medium, medium-replay]              # dataset for data sharing (corr
 
 discount: 0.99
 # train settings
-num_grad_steps: 1000000
-log_every_steps: 1000
+num_grad_steps: 10
+log_every_steps: 1
 # eval
-eval_every_steps: 10000
-num_eval_episodes: 10
+eval_every_steps: 1
+num_eval_episodes: 1
 # dataset
 replay_buffer_dir: ../../collect    # make sure to update this if you change hydra run dir
-replay_buffer_size: 10000000        # max: 10M
+replay_buffer_size: 100        # max: 10M
 replay_buffer_num_workers: 4
 batch_size: ${agent.batch_size}
 # misc

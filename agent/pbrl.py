@@ -304,3 +304,39 @@ class PBRLAgent:
 			utils.soft_update_params(self.critic[i], self.critic_target[i], self.critic_target_tau)
 
 		return metrics
+	
+	def save(self, directory):
+		# Create directory if it doesn't exist
+		directory /= "models"
+		directory.mkdir(parents=True, exist_ok=True)
+
+		# Save actor
+		torch.save(self.actor.state_dict(), directory / "actor.pt")
+		torch.save(self.actor_opt.state_dict(), directory / "actor_opt.pt")
+
+		# Save ensemble of critics
+		for i in range(self.ensemble):
+			c = self.critic[i]
+			torch.save(c.state_dict(), directory / f"critic_{i}.pt")
+
+			c_opt = self.critic_opt[i]
+			torch.save(c_opt.state_dict(), directory / f"critic_opt_{i}.pt")
+
+
+	def load(self, directory):
+		# Specify subdirectory
+		directory /= "models"
+
+		# Load actor
+		self.actor.load_state_dict(torch.load(directory / "actor.pt"))
+		self.actor_opt.load_state_dict(torch.load(directory / "actor_opt.pt"))
+		self.actor_target = copy.deepcopy(self.actor)
+
+		# Load ensemble of critics
+		for i in range(self.ensemble):
+			c = self.critic[i]
+			c.load_state_dict(torch.load(directory / f"critic_{i}.pt"))
+
+			c_opt = self.critic_opt[i]
+			c_opt.load_state_dict(torch.load(directory / f"critic_opt_{i}.pt"))
+

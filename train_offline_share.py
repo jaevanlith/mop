@@ -140,6 +140,9 @@ def main(cfg):
 				log('step', global_step)
 
 		global_step += 1
+	
+	# Save final actor and ensemble of critics
+	agent.save(work_dir)
 
 
 if __name__ == '__main__':
