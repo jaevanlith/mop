@@ -118,7 +118,7 @@ def main(cfg):
 		wandb_dir = f"./wandb/{path_str}_{cfg.seed}"
 		if not os.path.exists(wandb_dir):
 			os.makedirs(wandb_dir)
-		wandb.init(project="UTDS", entity='', config=cfg, name=f'{path_str}_1', dir=wandb_dir)
+		wandb.init(project="mop", config=cfg, name=f'{path_str}_1', dir=wandb_dir)
 		wandb.config.update(vars(cfg))
 
 	while train_until_step(global_step):
@@ -129,6 +129,8 @@ def main(cfg):
 
 		# train the agent
 		metrics = agent.update(replay_iter, global_step, cfg.num_grad_steps)
+		if cfg.wandb:
+			wandb.log(metrics)
 
 		# log
 		logger.log_metrics(metrics, global_step, ty='train')

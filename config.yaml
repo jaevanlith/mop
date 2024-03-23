@@ -30,7 +30,7 @@ use_tb: False
 # used for train_offline_single
 data_main: expert
 
-wandb: False
+wandb: True
 hydra:
   run:
 #    dir: ./result_td3bc_share/${task}-Share_${share_task[0]}_${share_task[1]}-Data_${data_type[0]}_${data_type[1]}-${agent.name}-${now:%m-%d-%H-%M-%S}
