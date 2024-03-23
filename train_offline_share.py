@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 import os
 import random
 os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-os.environ['MUJOCO_GL'] = 'egl'
+os.environ['MUJOCO_GL'] = 'glfw'
 import json
 from pathlib import Path
 import hydra
@@ -91,9 +91,11 @@ def main(cfg):
 		replay_dir_list.append(replay_dir)
 
 	# construct the replay buffer. env is the main task, we use it to relabel the reward of other tasks
+	print(cfg.replay_buffer_size)
 	replay_loader = make_replay_loader(env, replay_dir_list, cfg.replay_buffer_size,
 				cfg.batch_size, cfg.replay_buffer_num_workers, cfg.discount,
 				main_task=cfg.task, task_list=cfg.share_task)
+	print("load data...")
 	replay_iter = iter(replay_loader)     # OfflineReplayBuffer sample function
 	print("load data done.")
 
