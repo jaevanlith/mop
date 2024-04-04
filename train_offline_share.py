@@ -35,7 +35,7 @@ def get_data_seed(seed, num_data_seeds):
 	return (seed - 1) % num_data_seeds + 1
 
 
-def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder):
+def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, wandb):
 	step, episode, total_reward = 0, 0, 0
 	eval_until_episode = utils.Until(num_eval_episodes)
 	while eval_until_episode(episode):
@@ -51,6 +51,13 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder):
 
 		episode += 1
 		video_recorder.save(f'{global_step}.mp4')
+
+	metrics = dict()
+	metrics['episode_reward'] = total_reward / episode
+	metrics['episode_length'] = step / episode
+
+	if wandb:
+		wandb.log(metrics)
 
 	with logger.log_and_dump_ctx(global_step, ty='eval') as log:
 		log('episode_reward', total_reward / episode)
@@ -91,17 +98,12 @@ def main(cfg):
 		replay_dir_list.append(replay_dir)
 
 	# construct the replay buffer. env is the main task, we use it to relabel the reward of other tasks
-	print(cfg.replay_buffer_size)
 	replay_loader = make_replay_loader(env, replay_dir_list, cfg.replay_buffer_size,
 				cfg.batch_size, cfg.replay_buffer_num_workers, cfg.discount,
 				main_task=cfg.task, task_list=cfg.share_task)
 	print("load data...")
 	replay_iter = iter(replay_loader)     # OfflineReplayBuffer sample function
 	print("load data done.")
-
-	# for i in replay_iter:
-	# 	print(i)
-	# 	break
 
 	# create video recorders
 	video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -125,7 +127,7 @@ def main(cfg):
 		# try to evaluate
 		if eval_every_step(global_step):
 			logger.log('eval_total_time', timer.total_time(), global_step)
-			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder)
+			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder, wandb)
 
 		# train the agent
 		metrics = agent.update(replay_iter, global_step, cfg.num_grad_steps)
