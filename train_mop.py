@@ -5,6 +5,8 @@ import random
 import torch
 from replay_buffer import make_replay_loader
 import utils
+import wandb
+import os
 from logger import Logger
 from video import VideoRecorder
 from agent.mop import MOP
@@ -59,7 +61,7 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
     return agent
 
 
-def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_recorder):
+def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_recorder, cfg):
     '''
     Method to evaluate agent in ONE environment
 
@@ -97,6 +99,13 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
         video_recorder.save(f'{global_step}.mp4')
 
     # Log results
+    metrics = dict()
+    metrics['episode_reward'] = total_reward / episode
+    metrics['episode_length'] = step / episode
+
+    if cfg.wandb:
+        wandb.log(metrics)
+
     with logger.log_and_dump_ctx(global_step, ty='eval') as log:
         log('episode_reward', total_reward / episode)
         log('episode_length', step / episode)
@@ -154,6 +163,14 @@ def main(cfg):
     eval_every_step = utils.Every(cfg.eval_every_steps)
     log_every_step = utils.Every(cfg.log_every_steps)
 
+    if cfg.wandb:
+        path_str = f'{cfg.agent.name}_{cfg.tasks[0]}_{cfg.tasks[1]}_{cfg.data_type[0]}_{cfg.data_type[1]}'
+        wandb_dir = f"./wandb/{path_str}_{cfg.seed}"
+        if not os.path.exists(wandb_dir):
+            os.makedirs(wandb_dir)
+        wandb.init(project="mop_pd", config=cfg, name=f'{path_str}_1', dir=wandb_dir)
+        wandb.config.update(vars(cfg))
+
     # Training loop
     while train_until_step(global_step):
         
@@ -162,14 +179,17 @@ def main(cfg):
             logger.log('eval_total_time', timer.total_time(), global_step)
             # TODO: evaluate on ALL environments
             task_id = 0
-            eval(global_step, student, task_id, envs[0], logger, cfg.num_eval_episodes, video_recorder)
+            eval(global_step, student, task_id, envs[0], logger, cfg.num_eval_episodes, video_recorder, cfg)
 
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            metrics = student.update_actor(idx, teachers[idx], replay_iters[idx]) 
-            
+            metrics = student.update_actor(idx, teachers[idx], replay_iters[idx])
+
             # Log metrics
+            if cfg.wandb:
+                wandb.log(metrics)
+            
             logger.log_metrics(metrics, global_step, ty='train')
             if log_every_step(global_step):
                 elapsed_time, total_time = timer.reset()
