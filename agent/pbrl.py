@@ -324,9 +324,6 @@ class PBRLAgent:
 
 
 	def load(self, directory):
-		# Specify subdirectory
-		directory /= "models"
-
 		# Load actor
 		self.actor.load_state_dict(torch.load(directory / "actor.pt"))
 		self.actor_opt.load_state_dict(torch.load(directory / "actor_opt.pt"))
