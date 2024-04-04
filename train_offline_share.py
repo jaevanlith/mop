@@ -35,7 +35,7 @@ def get_data_seed(seed, num_data_seeds):
 	return (seed - 1) % num_data_seeds + 1
 
 
-def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, wandb):
+def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, cfg):
 	step, episode, total_reward = 0, 0, 0
 	eval_until_episode = utils.Until(num_eval_episodes)
 	while eval_until_episode(episode):
@@ -56,7 +56,7 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, wan
 	metrics['episode_reward'] = total_reward / episode
 	metrics['episode_length'] = step / episode
 
-	if wandb:
+	if cfg.wandb:
 		wandb.log(metrics)
 
 	with logger.log_and_dump_ctx(global_step, ty='eval') as log:
@@ -127,7 +127,7 @@ def main(cfg):
 		# try to evaluate
 		if eval_every_step(global_step):
 			logger.log('eval_total_time', timer.total_time(), global_step)
-			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder, wandb)
+			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder, cfg)
 
 		# train the agent
 		metrics = agent.update(replay_iter, global_step, cfg.num_grad_steps)
