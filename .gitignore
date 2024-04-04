@@ -2,3 +2,6 @@ collect/
 result_*/
 __pycache__/
 wandb/
+batch_scripts/
+teacher_models/
+result_mop/
