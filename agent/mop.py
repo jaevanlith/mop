@@ -59,9 +59,15 @@ class MOP:
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        # Log metrics
-        metrics = dict()
-        if self.use_tb:
-            metrics['actor_loss'] = actor_loss.item()
-        
-        return metrics
+        # Return loss
+        return actor_loss.item()
+    
+
+    def save(self, directory):
+        # Create directory if it doesn't exist
+        directory /= "models"
+        directory.mkdir(parents=True, exist_ok=True)
+
+        # Save actor
+        torch.save(self.actor.state_dict(), directory / "actor.pt")
+        torch.save(self.actor_optimizer.state_dict(), directory / "actor_opt.pt")
