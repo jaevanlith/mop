@@ -100,11 +100,12 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
 
     # Log results
     metrics = dict()
-    metrics['episode_reward'] = total_reward / episode
-    metrics['episode_length'] = step / episode
+    task_name = cfg.tasks[task_id]
+    metrics[f'episode_reward_{task_name}'] = total_reward / episode
+    metrics[f'episode_length_{task_name}'] = step / episode
 
     if cfg.wandb:
-        wandb.log(metrics)
+        wandb.log(metrics, step=global_step)
 
     with logger.log_and_dump_ctx(global_step, ty='eval') as log:
         log('episode_reward', total_reward / episode)
@@ -128,22 +129,27 @@ def main(cfg):
     utils.set_seed_everywhere(cfg.seed)
     device = torch.device(cfg.device)
 
-    # create logger
-    logger = Logger(work_dir, use_tb=cfg.use_tb)
-
-    # Initialize environments, teachers, and replay buffers for all tasks
+    # Initialize environments, teachers, replay buffers, and loggers for all tasks
     num_tasks = len(cfg.tasks)
     envs = []
     teachers = []
     replay_iters = []
+    loggers = []
     for task_id in range(num_tasks):
         env = dmc.make(cfg.tasks[task_id], seed=cfg.seed)
         teacher = init_teacher_agent(cfg, work_dir, env, task_id)
         replay_iter = init_replay_buffer(cfg, task_id, work_dir, env)
+        
+        log_dir = work_dir / Path(f'log_{cfg.tasks[task_id]}')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        logger = Logger(log_dir, use_tb=cfg.use_tb)
 
         envs.append(env)
         teachers.append(teacher)
         replay_iters.append(replay_iter)
+        loggers.append(logger)
+
 
     # Initialize student agent
     state_dim = envs[0].observation_spec().shape[0]
@@ -174,33 +180,36 @@ def main(cfg):
     # Training loop
     while train_until_step(global_step):
         
-        # Evaluate student policy on all tasks
-        if eval_every_step(global_step):
-            logger.log('eval_total_time', timer.total_time(), global_step)
-            # TODO: evaluate on ALL environments
-            task_id = 0
-            eval(global_step, student, task_id, envs[0], logger, cfg.num_eval_episodes, video_recorder, cfg)
-
         # Loop over tasks
         for idx in range(num_tasks):
+
+            # Evaluate student policy on all tasks
+            if eval_every_step(global_step):
+                loggers[idx].log('eval_total_time', timer.total_time(), global_step)
+                eval(global_step, student, idx, envs[0], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
+
             # Train student
-            metrics = student.update_actor(idx, teachers[idx], replay_iters[idx])
+            actor_loss = student.update_actor(idx, teachers[idx], replay_iters[idx])
 
             # Log metrics
+            metrics = dict()
+            metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
             if cfg.wandb:
-                wandb.log(metrics)
+                wandb.log(metrics, step=global_step)
             
-            logger.log_metrics(metrics, global_step, ty='train')
+            loggers[idx].log_metrics(metrics, global_step, ty='train')
             if log_every_step(global_step):
                 elapsed_time, total_time = timer.reset()
-                with logger.log_and_dump_ctx(global_step, ty='train') as log:
+                with loggers[idx].log_and_dump_ctx(global_step, ty='train') as log:
                     log('fps', cfg.log_every_steps / elapsed_time)
                     log('total_time', total_time)
                     log('step', global_step)
 
         # Increment global step        
         global_step += 1
-
+    
+    # Save student agent
+    student.save(work_dir)
 
 
 if __name__ == '__main__':
