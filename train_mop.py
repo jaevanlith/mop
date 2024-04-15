@@ -186,7 +186,7 @@ def main(cfg):
             # Evaluate student policy on all tasks
             if eval_every_step(global_step):
                 loggers[idx].log('eval_total_time', timer.total_time(), global_step)
-                eval(global_step, student, idx, envs[0], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
+                eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
 
             # Train student
             actor_loss = student.update_actor(idx, teachers[idx], replay_iters[idx])
