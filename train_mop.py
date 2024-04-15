@@ -179,15 +179,14 @@ def main(cfg):
 
     # Training loop
     while train_until_step(global_step):
-        
-        # Loop over tasks
-        for idx in range(num_tasks):
-
-            # Evaluate student policy on all tasks
-            if eval_every_step(global_step):
+        # Evaluate student policy on all tasks
+        if eval_every_step(global_step):
+            for idx in range(num_tasks):
                 loggers[idx].log('eval_total_time', timer.total_time(), global_step)
                 eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
 
+        # Loop over tasks
+        for idx in range(num_tasks):
             # Train student
             actor_loss = student.update_actor(idx, teachers[idx], replay_iters[idx])
 
