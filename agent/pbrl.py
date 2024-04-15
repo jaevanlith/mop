@@ -305,9 +305,9 @@ class PBRLAgent:
 
 		return metrics
 	
-	def save(self, directory):
+	def save(self, directory, sub_dir="models"):
 		# Create directory if it doesn't exist
-		directory /= "models"
+		directory /= sub_dir
 		directory.mkdir(parents=True, exist_ok=True)
 
 		# Save actor
