@@ -51,16 +51,28 @@ class MOP:
         state, action, reward, discount, next_obs, bool_flag = utils.to_torch(batch, self.device)
         bool_flag = bool_flag.cpu().detach().numpy()
 
+        # Compute MSE loss with teacher action
+        a = self.actor(state, task_id)
+        actor_loss = self.criterion(a, teacher.actor(state).detach())
+        
+        # Compute Q-value
+        Qvalues = []
+        for i in range(teacher.ensemble):
+            Qvalues.append(teacher.critic[i](state, a))           # (1024, 1)
+        Qvalues_min = torch.min(torch.hstack(Qvalues), dim=1, keepdim=True).values
+        assert Qvalues_min.size() == (1024, 1)
+
         # Compute loss
-        actor_loss = self.criterion(self.actor(state, task_id), teacher.actor(state).detach())
+        w = 0.05
+        loss = actor_loss - w * Qvalues_min.mean()
 
         # Update actor
         self.actor_optimizer.zero_grad()
-        actor_loss.backward()
+        loss.backward()
         self.actor_optimizer.step()
 
         # Return loss
-        return actor_loss.item()
+        return loss.item()
     
 
     def save(self, directory):
