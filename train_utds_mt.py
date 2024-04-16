@@ -200,7 +200,7 @@ def main(cfg):
 		# Loop over tasks
 		for idx in range(num_tasks):
 			# train the agent
-			output_dict = agents[idx].update(replay_iter, global_step, cfg.num_grad_steps)
+			output_dict = agents[idx].update(replay_iters[idx], global_step, cfg.num_grad_steps)
 
 			# Copy actor to all other agents
 			for i in range(num_tasks):
