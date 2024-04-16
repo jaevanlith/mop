@@ -75,12 +75,14 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
     # Initialize variables
     step, episode, total_reward = 0, 0, 0
     eval_until_episode = utils.Until(num_eval_episodes)
+    final_eval = (global_step == cfg.num_grad_steps - 1)
+    task_name = cfg.tasks[task_id]
 
     # Loop over episodes
     while eval_until_episode(episode):
         # Reset environment and video recorder
         time_step = env.reset()
-        video_recorder.init(env, enabled=(episode == 0))
+        video_recorder.init(env, enabled=(final_eval and episode == 0))
 
         # Run episode online
         while not time_step.last():
@@ -96,11 +98,10 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
             step += 1
 
         episode += 1
-        video_recorder.save(f'{global_step}.mp4')
+        video_recorder.save(f'{task_name}_{global_step}.mp4')
 
     # Log results
     metrics = dict()
-    task_name = cfg.tasks[task_id]
     metrics[f'episode_reward_{task_name}'] = total_reward / episode
     metrics[f'episode_length_{task_name}'] = step / episode
 
@@ -179,12 +180,6 @@ def main(cfg):
 
     # Training loop
     while train_until_step(global_step):
-        # Evaluate student policy on all tasks
-        if eval_every_step(global_step):
-            for idx in range(num_tasks):
-                loggers[idx].log('eval_total_time', timer.total_time(), global_step)
-                eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
-
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
@@ -203,6 +198,12 @@ def main(cfg):
                     log('fps', cfg.log_every_steps / elapsed_time)
                     log('total_time', total_time)
                     log('step', global_step)
+
+        # Evaluate student policy on all tasks
+        if eval_every_step(global_step):
+            for idx in range(num_tasks):
+                loggers[idx].log('eval_total_time', timer.total_time(), global_step)
+                eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
 
         # Increment global step        
         global_step += 1
