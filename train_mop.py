@@ -156,7 +156,8 @@ def main(cfg):
     state_dim = envs[0].observation_spec().shape[0]
     action_dim = envs[0].action_spec().shape[0]
     lr = cfg.agent.lr
-    student = MOP(state_dim=state_dim, action_dim=action_dim, device=device, lr=lr)
+    ensemble = cfg.agent.ensemble
+    student = MOP(state_dim, action_dim, device, lr, ensemble)
 
     # Create video recorder
     video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -183,7 +184,7 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss = student.update_actor(idx, teachers[idx], replay_iters[idx])
+            actor_loss = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
 
             # Log metrics
             metrics = dict()
