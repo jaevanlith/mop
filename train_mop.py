@@ -172,7 +172,7 @@ def main(cfg):
     log_every_step = utils.Every(cfg.log_every_steps)
 
     if cfg.wandb:
-        path_str = f'{cfg.agent.name}_{cfg.tasks[0]}_{cfg.tasks[1]}_{cfg.data_type[0]}_{cfg.data_type[1]}'
+        path_str = f'mop_pd'
         wandb_dir = f"./wandb/{path_str}_{cfg.seed}"
         if not os.path.exists(wandb_dir):
             os.makedirs(wandb_dir)
