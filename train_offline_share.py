@@ -36,11 +36,17 @@ def get_data_seed(seed, num_data_seeds):
 
 
 def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, cfg):
+	# Initialize variables
 	step, episode, total_reward = 0, 0, 0
 	eval_until_episode = utils.Until(num_eval_episodes)
+	final_eval = (global_step == cfg.num_grad_steps - 1)
+
+	# Loop over episodes
 	while eval_until_episode(episode):
 		time_step = env.reset()
-		video_recorder.init(env, enabled=(episode == 0))
+		video_recorder.init(env, enabled=(final_eval and episode == 0))
+		if final_eval and episode == 0: 
+			print(f'Videorecorder enabled at step {global_step}')
 		while not time_step.last():
 			with torch.no_grad(), utils.eval_mode(agent):
 				action = agent.act(time_step.observation, step=global_step, eval_mode=True)
@@ -57,7 +63,7 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, cfg
 	metrics['episode_length'] = step / episode
 
 	if cfg.wandb:
-		wandb.log(metrics)
+		wandb.log(metrics, step=global_step)
 
 	with logger.log_and_dump_ctx(global_step, ty='eval') as log:
 		log('episode_reward', total_reward / episode)
@@ -65,7 +71,7 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder, cfg
 		log('step', global_step)
 
 
-@hydra.main(config_path='.', config_name='config')
+@hydra.main(config_path='.', config_name='config_utds_single')
 def main(cfg):
 	work_dir = Path.cwd()
 	print(f'workspace: {work_dir}')
@@ -116,23 +122,18 @@ def main(cfg):
 	log_every_step = utils.Every(cfg.log_every_steps)
 
 	if cfg.wandb:
-		path_str = f'{cfg.agent.name}_{cfg.share_task[0]}_{cfg.share_task[1]}_{cfg.data_type[0]}_{cfg.data_type[1]}'
+		path_str = f'{cfg.run_name}'
 		wandb_dir = f"./wandb/{path_str}_{cfg.seed}"
 		if not os.path.exists(wandb_dir):
 			os.makedirs(wandb_dir)
-		wandb.init(project="utds", config=cfg, name=f'{path_str}_1', dir=wandb_dir)
+		wandb.init(project="utds", config=cfg, name=f'{path_str}', dir=wandb_dir)
 		wandb.config.update(vars(cfg))
 
 	while train_until_step(global_step):
-		# try to evaluate
-		if eval_every_step(global_step):
-			logger.log('eval_total_time', timer.total_time(), global_step)
-			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder, cfg)
-
 		# train the agent
 		metrics = agent.update(replay_iter, global_step, cfg.num_grad_steps)
 		if cfg.wandb:
-			wandb.log(metrics)
+			wandb.log(metrics, step=global_step)
 
 		# log
 		logger.log_metrics(metrics, global_step, ty='train')
@@ -142,6 +143,11 @@ def main(cfg):
 				log('fps', cfg.log_every_steps / elapsed_time)
 				log('total_time', total_time)
 				log('step', global_step)
+
+		# try to evaluate
+		if eval_every_step(global_step):
+			logger.log('eval_total_time', timer.total_time(), global_step)
+			eval(global_step, agent, env, logger, cfg.num_eval_episodes, video_recorder, cfg)
 
 		global_step += 1
 	
