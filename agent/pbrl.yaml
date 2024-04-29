@@ -31,3 +31,5 @@ ucb_ratio_ood_min: 0.1       # 0.1
 ood_decay_factor: 0.99995    # 0.99995   ucb ratio decay factor.
 
 share_ratio: 1.5             # penalty ratio for shared dataset
+
+deterministic_actor: ???
