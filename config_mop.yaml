@@ -7,18 +7,18 @@ defaults:
 # task settings
 env: walker
 tasks: [walker_walk, walker_stand]                # main task to train (relable other datasets to this task)
-data_type: [medium-replay, medium-replay]              # dataset for data sharing (corresponding each share_task)
+data_type: [medium, medium]              # dataset for data sharing (corresponding each share_task)
 
 teacher_dir: ../../teacher_models/${env}
-mode: 'c2a'                                # critic2actor, actor2actor, critic2critic2actor
+mode: a2a                                # critic2actor, actor2actor, critic2critic2actor
 
 discount: 0.99
 # train settings
-num_grad_steps: 10
-log_every_steps: 1
+num_grad_steps: 500000
+log_every_steps: 1000
 # eval
-eval_every_steps: 1
-num_eval_episodes: 1
+eval_every_steps: 1000
+num_eval_episodes: 10
 # dataset
 replay_buffer_dir: ../../collect    # make sure to update this if you change hydra run dir
 replay_buffer_size: 10000000        # max: 10M
