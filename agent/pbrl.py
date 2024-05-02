@@ -62,7 +62,7 @@ class ActorND(nn.Module):
 		normal = torch.distributions.Normal(mean, std)
 		x_t = normal.rsample()
 		# Map to (-1,1)
-		action = torch.tanh(x_t)
+		action = self.max_action * torch.tanh(x_t)
 
 		return action
 
