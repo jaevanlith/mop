@@ -15,7 +15,7 @@ mode: a2a                                # critic2actor, actor2actor, critic2cri
 discount: 0.99
 # train settings
 num_grad_steps: 500000
-log_every_steps: 1000
+log_every_steps: 10000
 # eval
 eval_every_steps: 1000
 num_eval_episodes: 10
@@ -32,6 +32,8 @@ use_tb: False
 
 # used for train_offline_single
 data_main: expert
+
+deterministic_actor: True
 
 wandb: True
 hydra:
