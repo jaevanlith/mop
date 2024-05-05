@@ -55,9 +55,13 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
                                 deterministic_actor=cfg.deterministic_actor)
     
     # Load weights
-    teachers_dir = work_dir / cfg.teacher_dir
-    agent_dir = teachers_dir.resolve() / Path(cfg.tasks[task_id]) / Path(cfg.data_type[task_id])
-    agent.load(agent_dir)
+    teacher_dir = work_dir / cfg.teacher_dir
+    task_folder = cfg.tasks[task_id]
+    if not cfg.deterministic_actor:
+        task_folder += '_ND'
+    teacher_dir = teacher_dir.resolve() / Path(task_folder) / Path(cfg.data_type[task_id])
+    
+    agent.load(teacher_dir)
 
     return agent
 
