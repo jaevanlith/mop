@@ -6,11 +6,13 @@ from agent.pbrl import Actor, ActorND, Critic
 import copy
 
 class ActorMT(Actor):
-    def __init__(self, state_dim, action_dim, max_action=1):
+    def __init__(self, state_dim, action_dim, hidden_dim=256, max_action=1):
         super().__init__(state_dim, action_dim, max_action)
         
         # Add an extra input feature for task id
-        self.l1 = nn.Linear(state_dim + 1, 256)
+        self.l1 = nn.Linear(state_dim + 1, hidden_dim)
+        self.l2 = nn.Linear(hidden_dim, hidden_dim)
+        self.l3 = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, state, task_id):
         # Concatenate state and task id
@@ -69,6 +71,7 @@ class MOP:
     def __init__(self, 
                  state_dim, 
                  action_dim,
+                 hidden_dim,
                  device,
                  lr,
                  ensemble,
@@ -81,7 +84,7 @@ class MOP:
         # Init multi-task actor and its optimizer
         self.deterministic_actor = deterministic_actor
         if self.deterministic_actor:
-            self.actor = ActorMT(state_dim, action_dim, self.max_action).to(device)
+            self.actor = ActorMT(state_dim, action_dim, hidden_dim, self.max_action).to(device)
         else:
             self.actor = ActorMTND(state_dim, action_dim, self.max_action).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
