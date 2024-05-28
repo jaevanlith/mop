@@ -32,7 +32,7 @@ use_tb: False
 # used for train_offline_single
 data_main: expert
 
-deterministic_actor: False
+deterministic_actor: True
 
 wandb: True
 hydra:
