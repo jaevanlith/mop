@@ -11,27 +11,38 @@ from logger import Logger
 from video import VideoRecorder
 from agent.mop import MOP
 
-def init_replay_buffer(cfg, task_id, work_dir, env):
+
+def init_replay_buffer(cfg, task_id, work_dir, env, share=False):
     '''
     Method to initialize replay buffer for a given task
 
     @param cfg: configuration object
     @param task_id: task of interest
     @param work_dir: working directory
+    @param env: environment
+    @param share: whether to share replay buffer across tasks
 
     @return replay_iter: replay buffer iterator
     '''
+    if share:
+        task_id_list = range(len(cfg.tasks))
+    else:
+        task_id_list = [task_id]
+    
     # Compose source directory
-    task = cfg.tasks[task_id]
-    data_type = cfg.data_type[task_id]
-    datasets_dir = work_dir / cfg.replay_buffer_dir
-    replay_dir = datasets_dir.resolve() / Path(task+"-td3-"+str(data_type)) / 'data'
-    print(f'replay dir: {replay_dir}')
+    replay_dir_list = []
+    for idx in task_id_list:
+        task = cfg.tasks[idx]
+        data_type = cfg.data_type[idx]
+        datasets_dir = work_dir / cfg.replay_buffer_dir
+        replay_dir = datasets_dir.resolve() / Path(task+"-td3-"+str(data_type)) / 'data'
+        print(f'replay dir: {replay_dir}')
+        replay_dir_list.append(replay_dir)
 
-    # Construct the replay buffer
-    replay_loader = make_replay_loader(env, [replay_dir], cfg.replay_buffer_size,
+    # Construct the replay buffer3
+    replay_loader = make_replay_loader(env, replay_dir_list, cfg.replay_buffer_size,
 				cfg.batch_size, cfg.replay_buffer_num_workers, cfg.discount,
-				main_task=task, task_list=[task])
+				main_task=task, task_list=[cfg.tasks[idx] for idx in task_id_list])
     replay_iter = iter(replay_loader)
 
     return replay_iter
@@ -51,12 +62,17 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
     agent = hydra.utils.instantiate(cfg.agent,
                                 obs_shape=env.observation_spec().shape, 
                                 action_shape=env.action_spec().shape,
-                                num_expl_steps=0)
+                                num_expl_steps=0,
+                                deterministic_actor=cfg.deterministic_actor)
     
     # Load weights
-    teachers_dir = work_dir / cfg.teacher_dir
-    agent_dir = teachers_dir.resolve() / Path(cfg.tasks[task_id]) / Path(cfg.data_type[task_id])
-    agent.load(agent_dir)
+    teacher_dir = work_dir / cfg.teacher_dir
+    task_folder = cfg.tasks[task_id]
+    if not cfg.deterministic_actor:
+        task_folder += '_ND'
+    teacher_dir = teacher_dir.resolve() / Path(task_folder) / Path(cfg.data_type[task_id])
+    
+    agent.load(teacher_dir)
 
     return agent
 
@@ -139,7 +155,7 @@ def main(cfg):
     for task_id in range(num_tasks):
         env = dmc.make(cfg.tasks[task_id], seed=cfg.seed)
         teacher = init_teacher_agent(cfg, work_dir, env, task_id)
-        replay_iter = init_replay_buffer(cfg, task_id, work_dir, env)
+        replay_iter = init_replay_buffer(cfg, task_id, work_dir, env, share=cfg.share_data)
         
         log_dir = work_dir / Path(f'log_{cfg.tasks[task_id]}')
         if not os.path.exists(log_dir):
@@ -155,9 +171,10 @@ def main(cfg):
     # Initialize student agent
     state_dim = envs[0].observation_spec().shape[0]
     action_dim = envs[0].action_spec().shape[0]
+    hidden_dim = cfg.hidden_dim
     lr = cfg.agent.lr
     ensemble = cfg.agent.ensemble
-    student = MOP(state_dim, action_dim, device, lr, ensemble)
+    student = MOP(state_dim, action_dim, hidden_dim, device, lr, ensemble)
 
     # Create video recorder
     video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -172,11 +189,11 @@ def main(cfg):
     log_every_step = utils.Every(cfg.log_every_steps)
 
     if cfg.wandb:
-        path_str = f'mop_pd'
-        wandb_dir = f"./wandb/{path_str}_{cfg.seed}"
+        path_str = cfg.run_name
+        wandb_dir = f"./wandb/{cfg.run_name}_{cfg.seed}"
         if not os.path.exists(wandb_dir):
             os.makedirs(wandb_dir)
-        wandb.init(project="mop_pd", config=cfg, name=f'{path_str}_1', dir=wandb_dir)
+        wandb.init(project="mop_pd", config=cfg, name=f'{cfg.run_name}', dir=wandb_dir)
         wandb.config.update(vars(cfg))
 
     # Training loop

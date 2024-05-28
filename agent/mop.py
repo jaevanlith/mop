@@ -2,16 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import utils
-from agent.pbrl import Actor, Critic
+from agent.pbrl import Actor, ActorND, Critic
 import copy
 
-
 class ActorMT(Actor):
-    def __init__(self, state_dim, action_dim, max_action=1):
+    def __init__(self, state_dim, action_dim, hidden_dim=256, max_action=1):
         super().__init__(state_dim, action_dim, max_action)
         
         # Add an extra input feature for task id
-        self.l1 = nn.Linear(state_dim + 1, 256)
+        self.l1 = nn.Linear(state_dim + 1, hidden_dim)
+        self.l2 = nn.Linear(hidden_dim, hidden_dim)
+        self.l3 = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, state, task_id):
         # Concatenate state and task id
@@ -21,7 +22,32 @@ class ActorMT(Actor):
         a = F.relu(self.l1(input))
         a = F.relu(self.l2(a))
         return self.max_action * torch.tanh(self.l3(a))
-    
+
+
+class ActorMTND(ActorND):
+    def __init__(self, state_dim, action_dim, max_action=1):
+        super().__init__(state_dim, action_dim, max_action)
+
+        # Add an extra input feature for task id
+        self.l1 = nn.Linear(state_dim + 1, 256)
+
+    def forward(self, state, task_id, suff_stats=False):
+        # Concatenate state and task id
+        task_id_tensor = torch.tensor(task_id, dtype=torch.float32, device=state.device).unsqueeze(0).expand(state.shape[0], -1)
+        input = torch.cat((state, task_id_tensor), 1)
+        # Forward pass
+        a = F.relu(self.l1(input))
+        a = F.relu(self.l2(a))
+        a = self.max_action * torch.tanh(self.l3(a))
+        # Separate mean and log std dev
+        mean, log_std = a[:, :self.action_dim], a[:, self.action_dim:]
+
+        # Either return sufficient statistics or sampled action
+        if suff_stats:
+            return mean, log_std
+        else:
+            return self.sample_action(mean, log_std)
+
 
 class CriticMT(Critic):
     def __init__(self, state_dim, action_dim):
@@ -45,16 +71,22 @@ class MOP:
     def __init__(self, 
                  state_dim, 
                  action_dim,
+                 hidden_dim,
                  device,
                  lr,
-                 ensemble):
+                 ensemble,
+                 deterministic_actor=True):
         self.device = device
         self.lr = lr
         self.ensemble = ensemble
         self.max_action = 1.0
 
         # Init multi-task actor and its optimizer
-        self.actor = ActorMT(state_dim, action_dim, self.max_action).to(device)
+        self.deterministic_actor = deterministic_actor
+        if self.deterministic_actor:
+            self.actor = ActorMT(state_dim, action_dim, hidden_dim, self.max_action).to(device)
+        else:
+            self.actor = ActorMTND(state_dim, action_dim, self.max_action).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 
         # Initialize ensemble of critics and their optimizers
@@ -67,7 +99,34 @@ class MOP:
             self.critic_opt.append(single_critic_opt)
 
         # Init loss function
-        self.criterion = nn.MSELoss()
+        if self.deterministic_actor:
+            self.criterion = nn.MSELoss()
+        else:
+            self.criterion = self.kl_div
+
+    
+    def kl_div(mu1, log_std1, mu2, log_std2):
+        # Compute variances
+        var1 = torch.exp(log_std1) ** 2
+        var2 = torch.exp(log_std2) ** 2
+
+        # Convert to diagional covariance matrices
+        cov1 = torch.diag_embed(var1)
+        cov2 = torch.diag_embed(var2)
+        cov2_inverse = torch.linalg.inv(cov2)
+
+        # Compute trace(cov2_inverse @ cov1)
+        tr = cov2_inverse.matmul(cov1).diagonal(offset=0, dim1=-1, dim2=-2).sum(-1)
+
+        # Compute dimensionality
+        k = mu1.size(-1)
+            
+        # Compute KL divergence
+        kl = 0.5 * (tr - k +
+                    (mu2-mu1).unsqueeze(dim=1).matmul(cov2_inverse).matmul((mu2-mu1).unsqueeze(dim=1).transpose(-1, -2)).squeeze(dim=-1).squeeze(dim=-1) +
+                    torch.log(torch.linalg.det(cov2) / torch.linalg.det(cov1)))
+
+        return kl
 
 
     def act(self, state, task_id):
@@ -77,7 +136,12 @@ class MOP:
 
     def update_a2a(self, task_id, teacher, state):
         # Compute loss
-        actor_loss = self.criterion(self.actor(state, task_id), teacher.actor(state).detach())
+        if self.deterministic_actor:
+            actor_loss = self.criterion(self.actor(state, task_id), teacher.actor(state).detach())
+        else:
+            mu, log_std = self.actor(state, task_id, suff_stats=True)
+            mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
+            actor_loss = self.criterion(mu, log_std, mu_teacher, log_std_teacher)
 
         # Update actor
         self.actor_optimizer.zero_grad()

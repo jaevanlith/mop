@@ -25,21 +25,46 @@ class Actor(nn.Module):
 		return self.max_action * torch.tanh(self.l3(a))
 	
 
-class ActorVar(nn.Module):
+class ActorND(nn.Module):
+	'''
+	Non-deterministic actor
+	'''
 	def __init__(self, state_dim, action_dim, max_action=1):
-		super(Actor, self).__init__()
+		super(ActorND, self).__init__()
 
+		self.action_dim = action_dim
 		self.l1 = nn.Linear(state_dim, 400)
 		self.l2 = nn.Linear(400, 400)
-		# Return mean and std_dev
+		# Return mean and log std dev
 		self.l3 = nn.Linear(400, 2*action_dim)
 
 		self.max_action = max_action
 
-	def forward(self, state):
+	def forward(self, state, suff_stats=False):
 		a = F.relu(self.l1(state))
 		a = F.relu(self.l2(a))
-		return self.max_action * torch.tanh(self.l3(a))
+		a = self.max_action * torch.tanh(self.l3(a))
+		# Separate mean and log std dev
+		mean, log_std = a[:, :self.action_dim], a[:, self.action_dim:]
+
+		# Either return sufficient statistics or sampled action
+		if suff_stats:
+			return mean, log_std
+		else:
+			return self.sample_action(mean, log_std)
+	
+	def sample_action(self, mean, log_std):
+		if self.training == False:
+			return mean
+		# Raise exponent to get std dev
+		std = log_std.exp()
+		# Sample action
+		normal = torch.distributions.Normal(mean, std)
+		x_t = normal.rsample()
+		# Map to (-1,1)
+		action = self.max_action * torch.tanh(x_t)
+
+		return action
 
 
 class Critic(nn.Module):
@@ -83,6 +108,7 @@ class PBRLAgent:
 	             ensemble,
 	             ood_noise,
 	             share_ratio,
+				 deterministic_actor=True,
 	             has_next_action=False):
 		self.policy_noise = policy_noise
 		self.policy_freq = policy_freq
@@ -116,7 +142,11 @@ class PBRLAgent:
 		self.ucb_ratio_ood_linear_steps = None
 
 		# models
-		self.actor = Actor(obs_shape[0], action_shape[0]).to(device)
+		self.deterministic_actor = deterministic_actor
+		if self.deterministic_actor:
+			self.actor = Actor(obs_shape[0], action_shape[0]).to(device)
+		else:
+			self.actor = ActorND(obs_shape[0], action_shape[0]).to(device)
 		self.actor_target = copy.deepcopy(self.actor)
 
 		# initialize ensemble of critic
@@ -147,10 +177,19 @@ class PBRLAgent:
 			c_single.train(training)
 
 	def act(self, obs, step, eval_mode):
+		'''
+		Method to select an action given the current state observation during testing
+		'''
 		obs = torch.as_tensor(obs, device=self.device).unsqueeze(0)
+
+		# Put actor in evaluation mode to sample action
+		self.actor.training = False
 		action = self.actor(obs)
+		self.actor.training = True
+
 		if step < self.num_expl_steps:
 			action.uniform_(-1.0, 1.0)
+		
 		return action.cpu().numpy()[0]
 
 	def ucb_func(self, obs, action, mean=False):
