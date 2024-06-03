@@ -1,0 +1,26 @@
+run_name: "stand_med_stand_med (isolate stand)"
+
+env: walker
+tasks: [walker_walk, walker_stand]
+data_type: [medium, expert]
+
+replay_buffer_dir: ../../collect
+replay_buffer_size: 10000000
+replay_buffer_num_workers: 4
+batch_size: 1024
+
+discount: 0.99
+device: cuda
+seed: 1
+
+student_dir: ../../student_models/${env}
+hidden_dim: 256
+lr: 1e-4
+ensemble: 5
+
+num_inference_steps: 10000
+share_states: True
+
+hydra:
+  run:
+    dir: ./result_infer/${run_name}-${now:%m-%d-%H-%M-%S}

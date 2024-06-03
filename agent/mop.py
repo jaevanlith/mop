@@ -14,14 +14,20 @@ class ActorMT(Actor):
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
         self.l3 = nn.Linear(hidden_dim, action_dim)
 
-    def forward(self, state, task_id):
+    def forward(self, state, task_id, analyse=False):
         # Concatenate state and task id
         task_id_tensor = torch.tensor(task_id, dtype=torch.float32, device=state.device).unsqueeze(0).expand(state.shape[0], -1)
         input = torch.cat((state, task_id_tensor), 1)
         # Forward pass
-        a = F.relu(self.l1(input))
-        a = F.relu(self.l2(a))
-        return self.max_action * torch.tanh(self.l3(a))
+        l1_out = F.relu(self.l1(input))
+        l2_out = F.relu(self.l2(l1_out))
+        l3_out = torch.tanh(self.l3(l2_out))
+        a = self.max_action * l3_out
+        
+        if analyse:
+            return l1_out, l2_out, l3_out
+        else:
+            return a
 
 
 class ActorMTND(ActorND):
@@ -132,6 +138,12 @@ class MOP:
     def act(self, state, task_id):
         state = torch.as_tensor(state, device=self.device).unsqueeze(0)
         return self.actor(state, task_id).cpu().numpy()[0]
+    
+    
+    def infer_analysis(self, state, task_id):
+        with torch.no_grad():
+            l1_out, l2_out, l3_out = self.actor(state, task_id, analyse=True)
+        return l1_out.mean(dim=0).cpu().numpy(), l2_out.mean(dim=0).cpu().numpy(), l3_out.mean(dim=0).cpu().numpy()
 
 
     def update_a2a(self, task_id, teacher, state):
@@ -195,3 +207,9 @@ class MOP:
         # Save actor
         torch.save(self.actor.state_dict(), directory / "actor.pt")
         torch.save(self.actor_optimizer.state_dict(), directory / "actor_opt.pt")
+
+
+    def load(self, directory):
+        # Load actor
+        self.actor.load_state_dict(torch.load(directory / "actor.pt"))
+        self.actor_optimizer.load_state_dict(torch.load(directory / "actor_opt.pt"))

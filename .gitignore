@@ -4,4 +4,5 @@ __pycache__/
 wandb/
 batch_scripts/
 teacher_models/
+student_models/
 result_mop/
