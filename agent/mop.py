@@ -25,7 +25,7 @@ class ActorMT(Actor):
         a = self.max_action * l3_out
         
         if analyse:
-            return l1_out, l2_out, l3_out
+            return a, l1_out, l2_out, l3_out
         else:
             return a
 
@@ -141,9 +141,10 @@ class MOP:
     
     
     def infer_analysis(self, state, task_id):
+        state = torch.as_tensor(state, device=self.device).unsqueeze(0)
         with torch.no_grad():
-            l1_out, l2_out, l3_out = self.actor(state, task_id, analyse=True)
-        return l1_out.mean(dim=0).cpu().numpy(), l2_out.mean(dim=0).cpu().numpy(), l3_out.mean(dim=0).cpu().numpy()
+            a, l1_out, l2_out, l3_out = self.actor(state, task_id, analyse=True)
+        return a.cpu().numpy()[0], l1_out.cpu().numpy()[0], l2_out.cpu().numpy()[0], l3_out.cpu().numpy()[0]
 
 
     def update_a2a(self, task_id, teacher, state):

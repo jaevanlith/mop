@@ -1,59 +1,49 @@
 from pathlib import Path
 import torch
 import hydra
-import os
 import dmc
-from replay_buffer import make_replay_loader
-from logger import Logger
 from agent.mop import MOP
-import utils
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
-
-def init_replay_buffer(cfg, task_id, work_dir, env, share=False):
-    '''
-    Method to initialize replay buffer for a given task
-
-    @param cfg: configuration object
-    @param task_id: task of interest
-    @param work_dir: working directory
-    @param env: environment
-    @param share: whether to share replay buffer across tasks
-
-    @return replay_iter: replay buffer iterator
-    '''
-    if share:
-        task_id_list = range(len(cfg.tasks))
-    else:
-        task_id_list = [task_id]
-    
-    # Compose source directory
-    replay_dir_list = []
-    for idx in task_id_list:
-        task = cfg.tasks[idx]
-        data_type = cfg.data_type[idx]
-        datasets_dir = work_dir / cfg.replay_buffer_dir
-        replay_dir = datasets_dir.resolve() / Path(task+"-td3-"+str(data_type)) / 'data'
-        print(f'replay dir: {replay_dir}')
-        replay_dir_list.append(replay_dir)
-
-    # Construct the replay buffer3
-    replay_loader = make_replay_loader(env, replay_dir_list, cfg.replay_buffer_size,
-				cfg.batch_size, cfg.replay_buffer_num_workers, cfg.discount,
-				main_task=task, task_list=[cfg.tasks[idx] for idx in task_id_list])
-    replay_iter = iter(replay_loader)
-
-    return replay_iter
+from scipy.stats import kendalltau
 
 
 def sort_and_reposition(dict_list):
     if len(dict_list) == 2:
         for i in range(3):
             dict_list[0][f'l{i+1}'], dict_list[1][f'l{i+1}'] = zip(*sorted(zip(dict_list[0][f'l{i+1}'], dict_list[1][f'l{i+1}'])))
-    else:
-        return dict_list
+
+
+def infer_analysis(agent, task_id, env, cfg, hidden_dim, action_dim):
+    # Initialize variables
+    step, l1_sum, l2_sum, l3_sum = 0, np.zeros(hidden_dim), np.zeros(hidden_dim), np.zeros(action_dim)
+
+    # Loop over episodes
+    for i in range(cfg.num_inference_episodes):
+        print('Episode:', i)
+        # Reset environment and video recorder
+        time_step = env.reset()
+
+        # Run episode online
+        while not time_step.last():
+            # WARNING: eval_mode is not defined in MOP
+            with torch.no_grad():
+                # Retrieve action
+                a, l1_out, l2_out, l3_out = agent.infer_analysis(time_step.observation, task_id)
+            # Execute action
+            time_step = env.step(a)
+            # Sum layer activations
+            l1_sum += l1_out
+            l2_sum += l2_out
+            l3_sum += l3_out
+            step += 1
+
+    l1_avg = l1_sum / step
+    l2_avg = l2_sum / step
+    l3_avg = l3_sum / step
+
+    return l1_avg, l2_avg, l3_avg
 
 
 def plot_results(dict_list, sorted, cfg):
@@ -90,16 +80,12 @@ def main(cfg):
 
     device = torch.device(cfg.device)
 
-    # Initialize replay buffers
+    # Initialize environments
     num_tasks = len(cfg.tasks)
     envs = []
-    replay_iters = []
     for task_id in range(num_tasks):
         env = dmc.make(cfg.tasks[task_id], seed=cfg.seed)
-        replay_iter = init_replay_buffer(cfg, task_id, work_dir, env, share=False)
-
         envs.append(env)
-        replay_iters.append(replay_iter)
 
     # Init student agent
     state_dim = envs[0].observation_spec().shape[0]
@@ -115,35 +101,9 @@ def main(cfg):
     student.load(student_dir)
 
     dict_list = []
-    for idx in [1,1]:
-        l1_sum = np.zeros(hidden_dim)
-        l2_sum = np.zeros(hidden_dim)
-        l3_sum = np.zeros(action_dim)
-
-        for _ in range(cfg.num_inference_steps):
-            # Sample batch of data
-            batch = next(replay_iters[idx])
-            state, action, reward, discount, next_obs, bool_flag = utils.to_torch(batch, cfg.device)
-
-            if cfg.share_states:
-                for i in range(num_tasks):
-                    if i != idx:
-                        batch = next(replay_iters[i])
-                        state_extra, action, reward, discount, next_obs, bool_flag = utils.to_torch(batch, cfg.device)
-                        state = torch.cat((state, state_extra), dim=0)
-
-            # Perform inference
-            l1_out, l2_out, l3_out = student.infer_analysis(state, idx)
-
-            # Update sums
-            l1_sum += l1_out
-            l2_sum += l2_out
-            l3_sum += l3_out
-        
-        # Compute averages
-        l1_avg = l1_sum / cfg.num_inference_steps
-        l2_avg = l2_sum / cfg.num_inference_steps
-        l3_avg = l3_sum / cfg.num_inference_steps
+    for idx in range(num_tasks):
+        print(f'Inferencing task {cfg.tasks[idx]}')
+        l1_avg, l2_avg, l3_avg = infer_analysis(student, idx, envs[idx], cfg, hidden_dim, action_dim)
 
         # Save results
         dict = {'l1': l1_avg, 'l2': l2_avg, 'l3': l3_avg}
@@ -158,6 +118,16 @@ def main(cfg):
     sort_and_reposition(dict_list)
     plot_results(dict_list, True, cfg)
 
+    # Calculate Kendall's tau
+    tau_l1 = kendalltau(dict_list[0]['l1'], dict_list[1]['l1'])[0]
+    tau_l2 = kendalltau(dict_list[0]['l2'], dict_list[1]['l2'])[0]
+    tau_l3 = kendalltau(dict_list[0]['l3'], dict_list[1]['l3'])[0]
+    print(f'Kendall\'s tau for layer 1: {tau_l1}')
+    print(f'Kendall\'s tau for layer 2: {tau_l2}')
+    print(f'Kendall\'s tau for layer 3: {tau_l3}')
+    tau_df = pd.DataFrame({'Layer 1': [tau_l1], 'Layer 2': [tau_l2], 'Layer 3': [tau_l3]})
+    tau_df = tau_df.set_index('Layer 1')
+    tau_df.to_csv(work_dir / Path('kendall_tau.csv'))
 
 if __name__ == '__main__':
     main()
