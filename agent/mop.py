@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import utils
 from agent.pbrl import Actor, ActorND, Critic
-import copy
 
 class ActorMT(Actor):
     def __init__(self, state_dim, action_dim, hidden_dim=256, max_action=1):
