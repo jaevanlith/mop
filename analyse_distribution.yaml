@@ -1,0 +1,20 @@
+run_name: analyse_distribution
+
+env: walker
+task: walker_walk
+data_type: medium
+
+seed: 1
+device: cuda
+discount: 0.99
+
+# dataset
+replay_buffer_dir_offline: ../../collect
+replay_buffer_dir_online: ../../collect_pbrl
+replay_buffer_size: 1000000
+replay_buffer_num_workers: 4
+batch_size: 1000000
+
+hydra:
+  run:
+    dir: ./result_analyse_distribution/${task}-${data_type}-${now:%m-%d-%H-%M-%S}
