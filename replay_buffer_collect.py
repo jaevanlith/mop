@@ -80,6 +80,7 @@ class ReplayBufferStorage:
 			self._num_transitions += int(eps_len)
 
 	def _store_episode(self, episode):
+		print("store episode")
 		eps_idx = self._num_episodes
 		eps_len = episode_len(episode)
 		self._num_episodes += 1
@@ -219,7 +220,7 @@ def make_replay_loader(storage, max_size, batch_size, num_workers,
 
 	loader = torch.utils.data.DataLoader(iterable,
 										 batch_size=batch_size,
-										 num_workers=num_workers,
+										#  num_workers=num_workers,
 										 pin_memory=True,
 										 worker_init_fn=_worker_init_fn)
 	return loader

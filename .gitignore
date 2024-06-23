@@ -1,4 +1,4 @@
-collect/
+collect*/
 result_*/
 __pycache__/
 wandb/

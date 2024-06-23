@@ -1,26 +1,25 @@
 defaults:
-  - agent: td3
+  - agent: pbrl
   - override hydra/launcher: submitit_local
 
 # mode
 # reward_free: false
 # task settings
-task: walker_run
+env: walker
+task: walker_walk
+data_type: expert
+agent_dir: ../../teacher_models/${env}/${task}/${data_type}
 #obs_type: states             # [states, pixels]
 #frame_stack: 3               # only works if obs_type=pixels
-action_repeat: 1              # set to 2 for pixels
 discount: 0.99
-# train settings
-num_train_frames: 20     # 2M steps to converge
-num_seed_frames: 1
-# eval
-eval_every_frames: 1
-num_eval_episodes: 1
+# amount to collect
+num_collect_episodes: 1000     # 2M steps to converge
+
 # pretrained
 #snapshot_ts: 100000
 #snapshot_base_dir: ./pretrained_models
 # replay buffer
-replay_buffer_size: 100
+replay_buffer_size: 1000000
 replay_buffer_num_workers: 4
 batch_size: ${agent.batch_size}
 nstep: ${agent.nstep}
@@ -29,21 +28,20 @@ update_encoder: false   # can be either true or false depending if we want to fi
 seed: 1
 device: cuda
 save_video: true
-save_train_video: false
 use_tb: false
-use_wandb: false
+use_wandb: true
 # experiment
 experiment: exp
 
 
 hydra:
   run:
-    dir: ./collect/${task}-${agent.name}-${now:%m-%d-%H-%M-%S}
+    dir: ./collect_pbrl/${task}-${data_type}-${now:%m-%d-%H-%M-%S}
 #    dir: ./collect/${task}-${agent.name}-medium-replay           # for collect_data_fixed, medium-replay
 #    dir: ./collect/${task}-${agent.name}-expert                  # for collect_data_fixed, expert
 #    dir: ./video/${task}-${agent.name}-video
   sweep:
-    dir: ./exp_sweep/${now:%Y.%m.%d}/${now:%H%M}_${agent.name}_${experiment}
+    dir: ./exp_sweep/${now:%Y.%m.%d}/${now:%H%M}_${task}-${data_type}
     subdir: ${hydra.job.num}
   launcher:
     timeout_min: 4300
@@ -52,4 +50,4 @@ hydra:
     tasks_per_node: 1
     mem_gb: 160
     nodes: 1
-    submitit_folder: ./exp_sweep/${now:%Y.%m.%d}/${now:%H%M}_${agent.name}_${experiment}/.slurm
+    submitit_folder: ./exp_sweep/${now:%Y.%m.%d}/${now:%H%M}_${task}-${data_type}/.slurm
