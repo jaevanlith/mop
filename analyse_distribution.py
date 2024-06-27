@@ -12,27 +12,29 @@ def estimate_distribution(states):
     kde = gaussian_kde(states_transpose)
     return kde
 
-def kl_divergence(offline_replay_iter, online_replay_iter):
+def kl_divergence(cfg, offline_replay_iter, online_replay_iter, epsilon=1e-10):
     offline_states = next(offline_replay_iter)[0]
     online_states = next(online_replay_iter)[0]
     
     assert offline_states.shape == online_states.shape
 
-    print('Offline state distribution estimation...')
-    p_kde = estimate_distribution(offline_states)
-    print('Online state distribution estimation...')
-    q_kde = estimate_distribution(online_states)
+    print('Retrieveing min and max state values...')
+    min_val = min(offline_states.min(), online_states.min())
+    max_val = max(offline_states.max(), online_states.max())
+    
+    print('Discretizing state space...')
+    bin_edges = np.linspace(min_val, max_val, cfg.bins + 1)
 
-    print('Resampling...')
-    samples = p_kde.resample(100)
-
-    print('Computing probabilities for samples offline...')
-    p = p_kde.pdf(samples)
-    print('Computing probabilities for samples online...')
-    q = q_kde.pdf(samples)
-
-    p = torch.tensor(p, dtype=torch.float32)
-    q = torch.tensor(q, dtype=torch.float32)
+    print('Estimating offline state distribution...')
+    offline_hist, _ = np.histogram(offline_states, bins=bin_edges, density=True)
+    print('Estimating online state distribution...')
+    online_hist, _ = np.histogram(online_states, bins=bin_edges, density=True)
+    
+    p = torch.tensor(offline_hist + epsilon, dtype=torch.float32)
+    q = torch.tensor(online_hist + epsilon, dtype=torch.float32)
+    
+    p = p / p.sum()
+    q = q / q.sum()
 
     # Avoid division by zero
     q = torch.clamp(q, min=1e-10)
@@ -71,8 +73,8 @@ def main(cfg):
     print('Data loaded')
 
     # Measure distribution shift
-    kl_div = kl_divergence(offline_replay_iter, online_replay_iter)
-    result = f'KL divergence between {cfg.task}-{cfg.data_type} and walker_stand-{cfg.data_type}: {kl_div}'
+    kl_div = kl_divergence(cfg, offline_replay_iter, online_replay_iter)
+    result = f'KL divergence between behavior and teacher policy for {cfg.task}-{cfg.data_type}: {kl_div}'
     print(result)
 
     f = open("./result.txt", "w")
