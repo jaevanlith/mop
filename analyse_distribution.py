@@ -12,7 +12,7 @@ def estimate_distribution(states):
     kde = gaussian_kde(states_transpose)
     return kde
 
-def kl_divergence(cfg, offline_replay_iter, online_replay_iter):
+def kl_divergence(offline_replay_iter, online_replay_iter):
     offline_states = next(offline_replay_iter)[0]
     online_states = next(online_replay_iter)[0]
     
@@ -24,10 +24,12 @@ def kl_divergence(cfg, offline_replay_iter, online_replay_iter):
     q_kde = estimate_distribution(online_states)
 
     print('Resampling...')
-    samples = p_kde.resample(cfg.batch_size)
+    samples = p_kde.resample(100)
 
-    p = p_kde(samples)
-    q = q_kde(samples)
+    print('Computing probabilities for samples offline...')
+    p = p_kde.pdf(samples)
+    print('Computing probabilities for samples online...')
+    q = q_kde.pdf(samples)
 
     p = torch.tensor(p, dtype=torch.float32)
     q = torch.tensor(q, dtype=torch.float32)
@@ -69,8 +71,13 @@ def main(cfg):
     print('Data loaded')
 
     # Measure distribution shift
-    kl_div = kl_divergence(cfg, offline_replay_iter, online_replay_iter)
-    print(f'KL divergence for {cfg.task}-{cfg.data_type} between teacher and offline data: {kl_div}')
+    kl_div = kl_divergence(offline_replay_iter, online_replay_iter)
+    result = f'KL divergence between {cfg.task}-{cfg.data_type} and walker_stand-{cfg.data_type}: {kl_div}'
+    print(result)
+
+    f = open("./result.txt", "w")
+    f.write(result)
+    f.close()
 
 if __name__ == '__main__':
     main()
