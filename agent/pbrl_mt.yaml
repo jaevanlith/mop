@@ -8,7 +8,7 @@ device: ${device}
 lr: 1e-4
 critic_target_tau: 0.005
 actor_target_tau: 0.005
-policy_freq: 2
+policy_freq: 1
 use_tb: True
 hidden_dim: 1024
 #stddev_schedule: 0.2
