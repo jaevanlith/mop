@@ -174,7 +174,15 @@ def main(cfg):
     hidden_dim = cfg.hidden_dim
     lr = cfg.agent.lr
     ensemble = cfg.agent.ensemble
-    student = MOP(state_dim, action_dim, hidden_dim, device, lr, ensemble)
+    student = MOP(state_dim, 
+                  action_dim, 
+                  hidden_dim, 
+                  device, 
+                  lr, 
+                  ensemble,
+                  kendalltau=cfg.kendalltau,
+                  kt_alpha=cfg.kt_alpha,
+                  kt_lambda=cfg.kt_lambda)
 
     # Create video recorder
     video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -189,7 +197,6 @@ def main(cfg):
     log_every_step = utils.Every(cfg.log_every_steps)
 
     if cfg.wandb:
-        path_str = cfg.run_name
         wandb_dir = f"./wandb/{cfg.run_name}_{cfg.seed}"
         if not os.path.exists(wandb_dir):
             os.makedirs(wandb_dir)
@@ -201,11 +208,14 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
+            actor_loss, mse, kt = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
 
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
+            metrics[f'mse_{cfg.tasks[idx]}'] = mse
+            metrics[f'kt_{cfg.tasks[idx]}'] = kt
+            
             if cfg.wandb:
                 wandb.log(metrics, step=global_step)
             

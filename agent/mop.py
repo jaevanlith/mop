@@ -80,11 +80,19 @@ class MOP:
                  device,
                  lr,
                  ensemble,
-                 deterministic_actor=True):
+                 deterministic_actor=True,
+                 kendalltau=False,
+                 kt_alpha=0.5,
+                 kt_lambda=0.1):
         self.device = device
         self.lr = lr
         self.ensemble = ensemble
         self.max_action = 1.0
+
+        # Init Kendall's tau parameters
+        self.kendalltau = kendalltau
+        self.kt_alpha = kt_alpha
+        self.kt_lambda = kt_lambda
 
         # Init multi-task actor and its optimizer
         self.deterministic_actor = deterministic_actor
@@ -147,13 +155,26 @@ class MOP:
 
 
     def update_a2a(self, task_id, teacher, state):
+        # Compute regularization term
+        # Push task=0 to task=1
+        if self.kendalltau and task_id==0:
+            student_action, l1_task0, l2_task0, _ = self.actor(state, task_id, analyse=True)
+            with torch.no_grad():
+                _, l1_task1, l2_task1, _ = self.actor(state, task_id+1, analyse=True)
+            regularize = self.kt_alpha * self.batch_kendall_tau(l1_task0, l1_task1) + (1-self.kt_alpha) * self.batch_kendall_tau(l2_task0, l2_task1)
+        else:
+            student_action = self.actor(state, task_id)
+            regularize = torch.tensor(0.0, device=state.device, dtype=state.dtype)  # Ensure regularize is a tensor
+        
         # Compute loss
         if self.deterministic_actor:
-            actor_loss = self.criterion(self.actor(state, task_id), teacher.actor(state).detach())
+            mse = self.criterion(student_action, teacher.actor(state).detach())
+            actor_loss = mse + self.kt_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
             mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
-            actor_loss = self.criterion(mu, log_std, mu_teacher, log_std_teacher)
+            mse = self.criterion(mu, log_std, mu_teacher, log_std_teacher)
+            actor_loss = mse
 
         # Update actor
         self.actor_optimizer.zero_grad()
@@ -161,7 +182,7 @@ class MOP:
         self.actor_optimizer.step()
 
         # Return loss
-        return actor_loss.item()
+        return actor_loss.item(), mse.item(), regularize.item()
     
 
     def update_c2a(self, task_id, teacher, state):
@@ -189,7 +210,7 @@ class MOP:
     def update(self, task_id, teacher, replay_iter, mode="a2a"):
         # Sample from replay buffer
         batch = next(replay_iter)
-        state, action, reward, discount, next_obs, bool_flag = utils.to_torch(batch, self.device)
+        state = utils.to_torch(batch, self.device)[0]
 
         if mode == "a2a":
             return self.update_a2a(task_id, teacher, state)
@@ -213,3 +234,23 @@ class MOP:
         # Load actor
         self.actor.load_state_dict(torch.load(directory / "actor.pt"))
         self.actor_optimizer.load_state_dict(torch.load(directory / "actor_opt.pt"))
+
+    
+    def kendall(self, x, y):
+        n = x.shape[0]
+        
+        def sub_pairs(x):
+            return x.expand(n,n).T.sub(x).sign_()
+        
+        return sub_pairs(x).mul_(sub_pairs(y)).sum().div(n*(n-1))
+
+    
+    def batch_kendall_tau(self, x, y):
+        batch_size = x.shape[0]
+        tau = torch.zeros(batch_size, device=x.device, dtype=x.dtype)
+
+        for i in range(batch_size):
+            tau[i] = self.kendall(x[i], y[i])
+        
+        avg_tau = tau.mean()
+        return avg_tau
