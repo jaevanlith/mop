@@ -157,10 +157,10 @@ class MOP:
     def update_a2a(self, task_id, teacher, state):
         # Compute regularization term
         # Push task=0 to task=1
-        if self.kendalltau and task_id==0:
+        if self.kendalltau and task_id==1:
             student_action, l1_task0, l2_task0, _ = self.actor(state, task_id, analyse=True)
             with torch.no_grad():
-                _, l1_task1, l2_task1, _ = self.actor(state, task_id+1, analyse=True)
+                _, l1_task1, l2_task1, _ = self.actor(state, task_id-1, analyse=True)
             regularize = self.kt_alpha * self.batch_kendall_tau(l1_task0, l1_task1) + (1-self.kt_alpha) * self.batch_kendall_tau(l2_task0, l2_task1)
         else:
             student_action = self.actor(state, task_id)
@@ -169,7 +169,7 @@ class MOP:
         # Compute loss
         if self.deterministic_actor:
             mse = self.criterion(student_action, teacher.actor(state).detach())
-            actor_loss = mse + self.kt_lambda * regularize
+            actor_loss = mse - self.kt_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
             mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
