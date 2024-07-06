@@ -2,27 +2,27 @@ defaults:
   - agent: pbrl                                # td3_bc, cql, pbrl
   - override hydra/launcher: submitit_local
 
-run_name: mop_pd
+run_name: mop_${kt_lambda}_${data_type[0]}_${data_type[1]}
 
 # unsupervised exploration
 # expl_agent: td3
 # task settings
 env: walker
 tasks: [walker_walk, walker_stand]                # main task to train (relable other datasets to this task)
-data_type: [medium, expert]              # dataset for data sharing (corresponding each share_task)
+data_type: [medium, medium]              # dataset for data sharing (corresponding each share_task)
 share_data: False
 
 teacher_dir: ../../teacher_models/${env}
 mode: a2a                                # critic2actor, actor2actor, critic2critic2actor
 hidden_dim: 256
 
-kendalltau: False
+kendalltau: True
 kt_lambda: 0.1
 kt_alpha: 0.5
 
 discount: 0.99
 # train settings
-num_grad_steps: 500000
+num_grad_steps: 100000
 log_every_steps: 10000
 # eval
 eval_every_steps: 10000

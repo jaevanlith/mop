@@ -197,7 +197,7 @@ def main(cfg):
     log_every_step = utils.Every(cfg.log_every_steps)
 
     if cfg.wandb:
-        wandb_dir = f"./wandb/{cfg.run_name}_{cfg.seed}"
+        wandb_dir = os.path.abspath(f"./wandb/{cfg.run_name}_{cfg.seed}")
         if not os.path.exists(wandb_dir):
             os.makedirs(wandb_dir)
         wandb.init(project="mop_pd", config=cfg, name=f'{cfg.run_name}', dir=wandb_dir)

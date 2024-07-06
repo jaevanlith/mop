@@ -1,0 +1,17 @@
+program: train_mop.py
+project: mop_pd
+name: kendall_tau_lambda
+method: bayes
+metric:
+  goal: maximize
+  name: episode_reward_walker_stand
+parameters:
+  kt_lambda:
+    min: 0.01
+    max: 20.0
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}
