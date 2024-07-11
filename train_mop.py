@@ -10,7 +10,9 @@ import os
 from logger import Logger
 from video import VideoRecorder
 from agent.mop import MOP
+import numpy as np
 
+NOISE_SCALAR = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 8.0, 6.0, 40.0, 70.0, 65.0, 95.0, 65.0, 65.0, 80.0], dtype=np.float32)
 
 def init_replay_buffer(cfg, task_id, work_dir, env, share=False):
     '''
@@ -77,7 +79,7 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
     return agent
 
 
-def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_recorder, cfg):
+def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_recorder, cfg, noise_var=None):
     '''
     Method to evaluate agent in ONE environment
 
@@ -104,8 +106,16 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
         while not time_step.last():
             # WARNING: eval_mode is not defined in MOP
             with torch.no_grad():
-                # Retrieve action
-                action = agent.act(time_step.observation, task_id)
+                # Retrieve state
+                state = time_step.observation
+                # Compute Gaussian noise
+                if noise_var is not None:
+                    noise = np.random.randn(*state.shape).astype(np.float32) * noise_var * NOISE_SCALAR
+
+                else:
+                    noise = np.zeros(state.shape, dtype=np.float32)
+                # Select action
+                action = agent.act(state + noise, task_id)
             # Execute action
             time_step = env.step(action)
             video_recorder.record(env)
@@ -118,16 +128,24 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
 
     # Log results
     metrics = dict()
-    metrics[f'episode_reward_{task_name}'] = total_reward / episode
-    metrics[f'episode_length_{task_name}'] = step / episode
+    reward = total_reward / episode
+    length = step / episode
+
+    if noise_var is None:
+        metrics[f'episode_reward_{task_name}'] = reward
+        metrics[f'episode_length_{task_name}'] = length
+    else:
+        metrics[f'episode_reward_{task_name}_noise_var={noise_var}'] = reward
+        metrics[f'episode_length_{task_name}_noise_var={noise_var}'] = length
 
     if cfg.wandb:
         wandb.log(metrics, step=global_step)
 
     with logger.log_and_dump_ctx(global_step, ty='eval') as log:
-        log('episode_reward', total_reward / episode)
-        log('episode_length', step / episode)
+        log('episode_reward', reward)
+        log('episode_length', length)
         log('step', global_step)
+        log('noise_variance', 0.0 if noise_var is None else noise_var)
 
 
 @hydra.main(config_path='.', config_name='config_mop')
@@ -231,7 +249,9 @@ def main(cfg):
         if eval_every_step(global_step):
             for idx in range(num_tasks):
                 loggers[idx].log('eval_total_time', timer.total_time(), global_step)
-                eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg)
+                eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg, noise_var=None)
+                for noise_var in cfg.noise_vars:
+                    eval(global_step, student, idx, envs[idx], loggers[idx], cfg.num_eval_episodes, video_recorder, cfg, noise_var)
 
         # Increment global step        
         global_step += 1
