@@ -1,8 +1,10 @@
 run_name: analyse_distribution
 
 env: walker
-task: walker_walk
-data_type: medium-replay
+task: [walker_stand, walker_walk]
+data_type: [medium, medium-replay]
+
+mode: TxT # B (behavior policy), T (teacher policy)
 
 seed: 1
 device: cuda
@@ -11,11 +13,11 @@ discount: 0.99
 # dataset
 replay_buffer_dir_offline: ../../collect
 replay_buffer_dir_online: ../../collect_pbrl
-replay_buffer_size: 1000000
+replay_buffer_size: 1200000
 replay_buffer_num_workers: 4
 batch_size: 1000000
 
-bins: 100
+bins: 2
 
 hydra:
   run:
