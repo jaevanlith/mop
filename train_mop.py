@@ -92,6 +92,8 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
     '''
     # Initialize variables
     step, episode, total_reward = 0, 0, 0
+    if cfg.kendall:
+        kt_sums = [0 for _ in range(cfg.hidden_layers+1)]
     eval_until_episode = utils.Until(num_eval_episodes)
     final_eval = (global_step == cfg.num_grad_steps - 1)
     task_name = cfg.tasks[task_id]
@@ -111,11 +113,15 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
                 # Compute Gaussian noise
                 if noise_var is not None:
                     noise = np.random.randn(*state.shape).astype(np.float32) * noise_var * NOISE_SCALAR
-
                 else:
                     noise = np.zeros(state.shape, dtype=np.float32)
                 # Select action
-                action = agent.act(state + noise, task_id)
+                if cfg.kendall:
+                    action, activations = agent.act(state + noise, task_id, kendall=True)
+                    for idx, activation in enumerate(activations):
+                        kt_sums[idx] += activation
+                else:
+                    action = agent.act(state + noise, task_id)
             # Execute action
             time_step = env.step(action)
             video_recorder.record(env)
@@ -138,6 +144,10 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
         metrics[f'episode_reward_{task_name}_noise_var={noise_var}'] = reward
         metrics[f'episode_length_{task_name}_noise_var={noise_var}'] = length
 
+    if cfg.kendall:
+        for idx in range(cfg.hidden_layers+1):
+            metrics[f'kendall_layer{idx}_{task_name}'] = kt_sums[idx] / step
+
     if cfg.wandb:
         wandb.log(metrics, step=global_step)
 
@@ -146,6 +156,9 @@ def eval(global_step, agent, task_id, env, logger, num_eval_episodes, video_reco
         log('episode_length', length)
         log('step', global_step)
         log('noise_variance', 0.0 if noise_var is None else noise_var)
+        if cfg.kendall:
+            for idx in range(cfg.hidden_layers+1):
+                log(f'kendall_layer{idx}', kt_sums[idx] / step)
 
 
 @hydra.main(config_path='.', config_name='config_mop')
@@ -189,18 +202,16 @@ def main(cfg):
     # Initialize student agent
     state_dim = envs[0].observation_spec().shape[0]
     action_dim = envs[0].action_spec().shape[0]
-    hidden_dim = cfg.hidden_dim
-    lr = cfg.agent.lr
-    ensemble = cfg.agent.ensemble
     student = MOP(state_dim, 
                   action_dim, 
-                  hidden_dim, 
+                  cfg.hidden_dim,
+                  cfg.hidden_layers,
                   device, 
-                  lr, 
-                  ensemble,
-                  kendalltau=cfg.kendalltau,
-                  kt_alpha=cfg.kt_alpha,
-                  kt_lambda=cfg.kt_lambda)
+                  cfg.agent.lr, 
+                  cfg.agent.ensemble,
+                  ndcg=cfg.ndcg,
+                  ndcg_alpha=cfg.ndcg_alpha,
+                  ndcg_lambda=cfg.ndcg_lambda)
 
     # Create video recorder
     video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -226,13 +237,13 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss, mse, kt = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
+            actor_loss, mse, ndcg = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
 
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
             metrics[f'mse_{cfg.tasks[idx]}'] = mse
-            metrics[f'kt_{cfg.tasks[idx]}'] = kt
+            metrics[f'ndcg_{cfg.tasks[idx]}'] = ndcg
             
             if cfg.wandb:
                 wandb.log(metrics, step=global_step)

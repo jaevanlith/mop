@@ -3,28 +3,34 @@ import torch.nn as nn
 import torch.nn.functional as F
 import utils
 from agent.pbrl import Actor, ActorND, Critic
+from torchmetrics.functional.retrieval import retrieval_normalized_dcg as ndcg
 
 class ActorMT(Actor):
-    def __init__(self, state_dim, action_dim, hidden_dim=256, max_action=1):
+    def __init__(self, state_dim, action_dim, hidden_dim=256, hidden_layers=1, max_action=1):
         super().__init__(state_dim, action_dim, max_action)
         
         # Add an extra input feature for task id
-        self.l1 = nn.Linear(state_dim + 1, hidden_dim)
-        self.l2 = nn.Linear(hidden_dim, hidden_dim)
-        self.l3 = nn.Linear(hidden_dim, action_dim)
+        self.input_layer = nn.Linear(state_dim + 1, hidden_dim)
+        self.hidden_layers = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim) for _ in range(hidden_layers)])
+        self.output_layer = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, state, task_id, analyse=False):
         # Concatenate state and task id
         task_id_tensor = torch.tensor(task_id, dtype=torch.float32, device=state.device).unsqueeze(0).expand(state.shape[0], -1)
         input = torch.cat((state, task_id_tensor), 1)
-        # Forward pass
-        l1_out = F.relu(self.l1(input))
-        l2_out = F.relu(self.l2(l1_out))
-        l3_out = torch.tanh(self.l3(l2_out))
-        a = self.max_action * l3_out
+
+        activations = []
+        x = F.relu(self.input_layer(input))
+        activations.append(x)
+
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
+            activations.append(x)
+
+        a = self.max_action * torch.tanh(self.output_layer(x))
         
         if analyse:
-            return a, l1_out, l2_out, l3_out
+            return a, activations
         else:
             return a
 
@@ -77,27 +83,29 @@ class MOP:
                  state_dim, 
                  action_dim,
                  hidden_dim,
+                 hidden_layers,
                  device,
                  lr,
                  ensemble,
                  deterministic_actor=True,
-                 kendalltau=False,
-                 kt_alpha=0.5,
-                 kt_lambda=0.1):
+                 ndcg=False,
+                 ndcg_alpha=0.5,
+                 ndcg_lambda=0.1):
         self.device = device
         self.lr = lr
         self.ensemble = ensemble
         self.max_action = 1.0
+        self.hidden_layers = hidden_layers
 
-        # Init Kendall's tau parameters
-        self.kendalltau = kendalltau
-        self.kt_alpha = kt_alpha
-        self.kt_lambda = kt_lambda
+        # Init NDCG parameters
+        self.ndcg = ndcg
+        self.ndcg_alpha = ndcg_alpha
+        self.ndcg_lambda = ndcg_lambda
 
         # Init multi-task actor and its optimizer
         self.deterministic_actor = deterministic_actor
         if self.deterministic_actor:
-            self.actor = ActorMT(state_dim, action_dim, hidden_dim, self.max_action).to(device)
+            self.actor = ActorMT(state_dim, action_dim, hidden_dim, hidden_layers, self.max_action).to(device)
         else:
             self.actor = ActorMTND(state_dim, action_dim, self.max_action).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
@@ -142,34 +150,47 @@ class MOP:
         return kl
 
 
-    def act(self, state, task_id):
+    def act(self, state, task_id, kendall=False):
         state = torch.as_tensor(state, device=self.device).unsqueeze(0)
-        return self.actor(state, task_id).cpu().numpy()[0]
+        if kendall:
+            a, activations_self = self.actor(state, task_id, analyse=True)
+            _, activations_other = self.actor(state, task_id^1, analyse=True)
+
+            kt = []
+            for i in range(self.hidden_layers+1):
+                kt.append(self.kendall(activations_self[i][0], activations_other[i][0]).item())
+
+            return a.cpu().numpy()[0], kt
+        else:
+            return self.actor(state, task_id).cpu().numpy()[0]
     
     
     def infer_analysis(self, state, task_id):
         state = torch.as_tensor(state, device=self.device).unsqueeze(0)
         with torch.no_grad():
-            a, l1_out, l2_out, l3_out = self.actor(state, task_id, analyse=True)
-        return a.cpu().numpy()[0], l1_out.cpu().numpy()[0], l2_out.cpu().numpy()[0], l3_out.cpu().numpy()[0]
+            a, activations = self.actor(state, task_id, analyse=True)
+        return a.cpu().numpy()[0], [act.cpu().numpy()[0] for act in activations]
 
 
     def update_a2a(self, task_id, teacher, state):
         # Compute regularization term
-        # Push task=0 to task=1
-        if self.kendalltau and task_id==1:
-            student_action, l1_task0, l2_task0, _ = self.actor(state, task_id, analyse=True)
+        # Push task=1 to task=0
+        regularize = torch.tensor(0.0, device=state.device, dtype=state.dtype)
+        if self.ndcg and task_id==1:
+            student_action, activations_self = self.actor(state, task_id, analyse=True)
+            
             with torch.no_grad():
-                _, l1_task1, l2_task1, _ = self.actor(state, task_id-1, analyse=True)
-            regularize = self.kt_alpha * self.batch_kendall_tau(l1_task0, l1_task1) + (1-self.kt_alpha) * self.batch_kendall_tau(l2_task0, l2_task1)
+                _, activations_other = self.actor(state, task_id-1, analyse=True)
+
+            for i in range(self.hidden_layers+1):
+                regularize += 1/(self.hidden_layers+1) * ndcg(activations_self[i], activations_other[i])
         else:
             student_action = self.actor(state, task_id)
-            regularize = torch.tensor(0.0, device=state.device, dtype=state.dtype)  # Ensure regularize is a tensor
         
         # Compute loss
         if self.deterministic_actor:
             mse = self.criterion(student_action, teacher.actor(state).detach())
-            actor_loss = mse - self.kt_lambda * regularize
+            actor_loss = mse - self.ndcg_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
             mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
@@ -254,3 +275,13 @@ class MOP:
         
         avg_tau = tau.mean()
         return avg_tau
+    
+
+    def batch_ndcg(self, x, y):
+        batch_size = x.shape[0]
+        ndcg_sum = 0
+
+        for i in range(batch_size):
+            ndcg_sum += ndcg(x[i], y[i])
+        
+        return ndcg_sum / batch_size

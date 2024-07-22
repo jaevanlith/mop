@@ -2,7 +2,7 @@ defaults:
   - agent: pbrl                                # td3_bc, cql, pbrl
   - override hydra/launcher: submitit_local
 
-run_name: mop_${kt_lambda}_${data_type[0]}_${data_type[1]}
+run_name: ndcg_lambda=${ndcg_lambda}_${data_type[0]}_${data_type[1]}
 
 # unsupervised exploration
 # expl_agent: td3
@@ -15,14 +15,18 @@ share_data: False
 teacher_dir: ../../teacher_models/${env}
 mode: a2a                                # critic2actor, actor2actor, critic2critic2actor
 hidden_dim: 256
+hidden_layers: 1
 
-kendalltau: True
-kt_lambda: 0.1
-kt_alpha: 0.5
+ndcg: True
+ndcg_lambda: 0.1
+ndcg_alpha: 0.5
+
+kendall: True
+noise_vars: []
 
 discount: 0.99
 # train settings
-num_grad_steps: 100000
+num_grad_steps: 500000
 log_every_steps: 10000
 # eval
 eval_every_steps: 10000
