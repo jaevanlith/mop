@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 import os
 
 os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-os.environ['MUJOCO_GL'] = 'glfw'
+os.environ['MUJOCO_GL'] = 'egl'
 import pickle
 from pathlib import Path
 
@@ -203,9 +203,17 @@ class Workspace:
 			time_step = self.train_env.step(action)
 			episode_reward += time_step.reward
 			self.replay_storage.add(time_step, meta, physics=self.train_env.physics.get_state())
+
 			self.train_video_recorder.record(time_step.observation)
 			episode_step += 1
 			self._global_step += 1
+
+	def load_snapshot(self, filename):
+		try:
+			with open(filename, "rb") as f:
+				self.agent = pickle.load(f)
+		except Exception as e:
+			raise Exception(f"Error loading agent: {e}")
 
 
 @hydra.main(config_path='.', config_name='collect_data')
@@ -213,16 +221,16 @@ def main(cfg):
 	from collect_data import Workspace as W
 	root_dir = Path.cwd()
 	workspace = W(cfg)
-	snapshot = root_dir / 'snapshot.pt'
+	snapshot = Path(cfg.snapshot_dir)
 	if snapshot.exists():
 		print(f'resuming: {snapshot}')
-		workspace.load_snapshot()
+		workspace.load_snapshot(snapshot)
 
 	if cfg.use_wandb:
 		wandb_dir = f"./wandb/collect_{cfg.task}_{cfg.agent.name}_{cfg.seed}"
 		if not os.path.exists(wandb_dir):
 			os.makedirs(wandb_dir)
-		wandb.init(project="UTDS", entity='', config=cfg, group=f'{cfg.task}_{cfg.agent.name}',
+		wandb.init(project="collect", config=cfg, group=f'{cfg.task}_{cfg.agent.name}',
 		           name=f'{cfg.task}_{cfg.agent.name}', dir=wandb_dir)
 		wandb.config.update(vars(cfg))
 
