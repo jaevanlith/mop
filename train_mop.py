@@ -72,6 +72,8 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
     task_folder = cfg.tasks[task_id]
     if not cfg.deterministic_actor:
         task_folder += '_ND'
+    if cfg.data_sharing:
+        task_folder += '_SHARE'
     teacher_dir = teacher_dir.resolve() / Path(task_folder) / Path(cfg.data_type[task_id])
     
     agent.load(teacher_dir)
