@@ -172,7 +172,17 @@ class MOP:
         return a.cpu().numpy()[0], [act.cpu().numpy()[0] for act in activations]
 
 
-    def update_a2a(self, task_id, teacher, state):
+    def compute_q(self, state, action, teacher):
+        Qvalues = []
+        for i in range(teacher.ensemble):
+            Qvalues.append(teacher.critic[i](state, action))           # (1024, 1)
+        Qvalues_min = torch.min(torch.hstack(Qvalues), dim=1, keepdim=True).values
+        assert Qvalues_min.size() == (1024, 1)
+
+        return Qvalues_min
+
+
+    def update_a2a(self, task_id, teacher, state, cross_teacher=None):
         # Compute regularization term
         # Push task=1 to task=0
         regularize = torch.tensor(0.0, device=state.device, dtype=state.dtype)
@@ -189,7 +199,17 @@ class MOP:
         
         # Compute loss
         if self.deterministic_actor:
-            mse = self.criterion(student_action, teacher.actor(state).detach())
+            teacher_action = teacher.actor(state).detach()
+            
+            if cross_teacher is not None:
+                ct_action = cross_teacher.actor(state).detach()
+                
+                ct_q = self.compute_q(state, ct_action, cross_teacher)
+                t_q = self.compute_q(state, teacher_action, teacher)
+
+                teacher_action = torch.where(torch.gt(ct_q, t_q), ct_action, teacher_action)
+
+            mse = self.criterion(student_action, teacher_action)
             actor_loss = mse - self.ndcg_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
@@ -228,13 +248,13 @@ class MOP:
         return actor_loss.item()
     
 
-    def update(self, task_id, teacher, replay_iter, mode="a2a"):
+    def update(self, task_id, teacher, cross_teacher, replay_iter, mode="a2a"):
         # Sample from replay buffer
         batch = next(replay_iter)
         state = utils.to_torch(batch, self.device)[0]
 
         if mode == "a2a":
-            return self.update_a2a(task_id, teacher, state)
+            return self.update_a2a(task_id, teacher, state, cross_teacher)
         elif mode == "c2a":
             return self.update_c2a(task_id, teacher, state)
         else:

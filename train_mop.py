@@ -1,3 +1,7 @@
+import os
+os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
+os.environ['MUJOCO_GL'] = 'egl'
+
 import hydra
 from pathlib import Path
 import dmc
@@ -50,7 +54,7 @@ def init_replay_buffer(cfg, task_id, work_dir, env, share=False):
     return replay_iter
 
 
-def init_teacher_agent(cfg, work_dir, env, task_id):
+def init_teacher_agent(cfg, work_dir, env, task_id, cross_teacher=False):
     '''
     Method to initialize teacher agent
 
@@ -74,6 +78,8 @@ def init_teacher_agent(cfg, work_dir, env, task_id):
         task_folder += '_ND'
     if cfg.data_sharing:
         task_folder += '_SHARE'
+    if cross_teacher:
+        task_folder += '_CROSS'
     teacher_dir = teacher_dir.resolve() / Path(task_folder) / Path(cfg.data_type[task_id])
     
     agent.load(teacher_dir)
@@ -188,6 +194,7 @@ def main(cfg):
     for task_id in range(num_tasks):
         env = dmc.make(cfg.tasks[task_id], seed=cfg.seed)
         teacher = init_teacher_agent(cfg, work_dir, env, task_id)
+        cross_teacher = init_teacher_agent(cfg, work_dir, env, task_id, True) if cfg.cross_teacher else None
         replay_iter = init_replay_buffer(cfg, task_id, work_dir, env, share=cfg.share_data)
         
         log_dir = work_dir / Path(f'log_{cfg.tasks[task_id]}')
@@ -196,7 +203,7 @@ def main(cfg):
         logger = Logger(log_dir, use_tb=cfg.use_tb)
 
         envs.append(env)
-        teachers.append(teacher)
+        teachers.append([teacher, cross_teacher])
         replay_iters.append(replay_iter)
         loggers.append(logger)
 
@@ -239,7 +246,7 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss, mse, ndcg = student.update(idx, teachers[idx], replay_iters[idx], mode=cfg.mode)
+            actor_loss, mse, ndcg = student.update(idx, teachers[idx][0], teachers[idx][1], replay_iters[idx], mode=cfg.mode)
 
             # Log metrics
             metrics = dict()

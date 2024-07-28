@@ -2,7 +2,7 @@ defaults:
   - agent: pbrl                                # td3_bc, cql, pbrl
   - override hydra/launcher: submitit_local
 
-run_name: ndcg_lambda=${ndcg_lambda}_${data_type[0]}_${data_type[1]}
+run_name: mop         # ndcg_lambda=${ndcg_lambda}_${data_type[0]}_${data_type[1]}
 
 # unsupervised exploration
 # expl_agent: td3
@@ -11,18 +11,20 @@ env: walker
 tasks: [walker_walk, walker_stand]                # main task to train (relable other datasets to this task)
 data_type: [medium, medium]              # dataset for data sharing (corresponding each share_task)
 share_data: False
+data_sharing: False
 
 teacher_dir: ../../teacher_models/${env}
+cross_teacher: False
 mode: a2a                                # critic2actor, actor2actor, critic2critic2actor
 hidden_dim: 256
 hidden_layers: 1
 
-ndcg: True
+ndcg: False
 ndcg_lambda: 0.1
 ndcg_alpha: 0.5
 
 kendall: True
-noise_vars: []
+noise_vars: [0.001, 0.01, 0.1]
 
 discount: 0.99
 # train settings
