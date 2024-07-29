@@ -1,6 +1,6 @@
 import os
 os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-os.environ['MUJOCO_GL'] = 'egl'
+os.environ['MUJOCO_GL'] = 'glfw'
 
 import hydra
 from pathlib import Path
@@ -218,6 +218,7 @@ def main(cfg):
                   device, 
                   cfg.agent.lr, 
                   cfg.agent.ensemble,
+                  sce=cfg.sce,
                   ndcg=cfg.ndcg,
                   ndcg_alpha=cfg.ndcg_alpha,
                   ndcg_lambda=cfg.ndcg_lambda)
@@ -246,13 +247,16 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss, mse, ndcg = student.update(idx, teachers[idx][0], teachers[idx][1], replay_iters[idx], mode=cfg.mode)
+            actor_loss, mse, reg = student.update(idx, teachers[idx][0], teachers[idx][1], replay_iters[idx], mode=cfg.mode)
 
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
             metrics[f'mse_{cfg.tasks[idx]}'] = mse
-            metrics[f'ndcg_{cfg.tasks[idx]}'] = ndcg
+            if cfg.ndcg:
+                metrics[f'ndcg_{cfg.tasks[idx]}'] = reg
+            elif cfg.sce:
+                metrics[f'sce_{cfg.tasks[idx]}'] = reg
             
             if cfg.wandb:
                 wandb.log(metrics, step=global_step)

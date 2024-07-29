@@ -88,6 +88,7 @@ class MOP:
                  lr,
                  ensemble,
                  deterministic_actor=True,
+                 sce=False,
                  ndcg=False,
                  ndcg_alpha=0.5,
                  ndcg_lambda=0.1):
@@ -98,6 +99,7 @@ class MOP:
         self.hidden_layers = hidden_layers
 
         # Init NDCG parameters
+        self.sce = sce
         self.ndcg = ndcg
         self.ndcg_alpha = ndcg_alpha
         self.ndcg_lambda = ndcg_lambda
@@ -194,6 +196,14 @@ class MOP:
 
             for i in range(self.hidden_layers+1):
                 regularize += 1/(self.hidden_layers+1) * ndcg(activations_self[i], activations_other[i])
+        elif self.sce and task_id==1:
+            student_action, activations_self = self.actor(state, task_id, analyse=True)
+            
+            with torch.no_grad():
+                _, activations_other = self.actor(state, task_id-1, analyse=True)
+
+            for i in range(self.hidden_layers+1):
+                regularize += 1/(self.hidden_layers+1) * self.softmax_cross_entropy_loss(activations_self[i], activations_other[i])
         else:
             student_action = self.actor(state, task_id)
         
@@ -305,3 +315,10 @@ class MOP:
             ndcg_sum += ndcg(x[i], y[i])
         
         return ndcg_sum / batch_size
+    
+
+    def softmax_cross_entropy_loss(self, x, y):
+        x_probs = F.softmax(x, dim=1)
+        y_probs = F.softmax(y, dim=1)
+        
+        return -torch.sum(x_probs * torch.log(y_probs), dim=1).mean()
