@@ -3,7 +3,6 @@ result_*/
 __pycache__/
 wandb/
 batch_scripts/
-teacher_models/
-student_models/
+*_models/
 result_mop/
 snapshots/

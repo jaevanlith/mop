@@ -24,14 +24,24 @@ from collections import OrderedDict
 torch.backends.cudnn.benchmark = True
 
 
-def init_agent(env, cfg, dir):
-    cfg.obs_shape = env.observation_spec().shape
-    cfg.action_shape = env.action_spec().shape
-    cfg.num_expl_steps = 0
-    cfg.deterministic_actor = True
-    agent = hydra.utils.instantiate(cfg)
+def init_agent(env, cfg, dir, agent_name='td3'):
+    if agent_name == 'pbrl':
+        cfg.obs_shape = env.observation_spec().shape
+        cfg.action_shape = env.action_spec().shape
+        cfg.num_expl_steps = 0
+        cfg.deterministic_actor = True
+        agent = hydra.utils.instantiate(cfg)
 
-    agent.load(Path(dir))
+        agent.load(Path(dir))
+    elif agent_name == 'td3':
+        filename = Path(dir) / "td3.pkl"
+        try:
+            with open(filename, "rb") as f:
+                agent = pickle.load(f)
+        except Exception as e:
+            raise Exception(f"Error loading agent: {e}")
+    else:
+        raise Exception(f"Unknown agent: {cfg.agent}")
     
     return agent
 

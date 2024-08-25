@@ -1,15 +1,17 @@
-run_name: "walk_exp_stand_med"
+run_name: "walk_med_stand_med_DS"
 
 env: walker
 tasks: [walker_walk, walker_stand]
-data_type: [expert, medium]
+data_type: [medium, medium]
 
 discount: 0.99
 device: cuda
 seed: 1
 
 student_dir: ../../../student_models/${env}
+data_sharing: True
 hidden_dim: 256
+hidden_layers: 1
 lr: 1e-4
 ensemble: 5
 
