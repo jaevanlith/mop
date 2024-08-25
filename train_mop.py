@@ -81,6 +81,7 @@ def init_teacher_agent(cfg, work_dir, env, task_id, cross_teacher=False):
     if cross_teacher:
         task_folder += '_CROSS'
     teacher_dir = teacher_dir.resolve() / Path(task_folder) / Path(cfg.data_type[task_id])
+    print(f'teacher dir: {teacher_dir}')
     
     agent.load(teacher_dir)
 
@@ -218,6 +219,7 @@ def main(cfg):
                   device, 
                   cfg.agent.lr, 
                   cfg.agent.ensemble,
+                  deterministic_actor=cfg.deterministic_actor,
                   sce=cfg.sce,
                   ndcg=cfg.ndcg,
                   ndcg_alpha=cfg.ndcg_alpha,
@@ -247,13 +249,19 @@ def main(cfg):
         # Loop over tasks
         for idx in range(num_tasks):
             # Train student
-            actor_loss, mse, reg = student.update(idx, teachers[idx][0], teachers[idx][1], replay_iters[idx], mode=cfg.mode)
+            res = student.update(idx, teachers[idx][0], teachers[idx][1], replay_iters[idx], mode=cfg.mode)
+            if cfg.mode == 'a2a':
+                actor_loss, mse, reg = res[0], res[1], res[2]
+            elif cfg.mode == 'c2a':
+                actor_loss = res
+            else:
+                raise ValueError(f'Invalid mode: {cfg.mode}')
 
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
-            metrics[f'mse_{cfg.tasks[idx]}'] = mse
             if cfg.ndcg:
+                metrics[f'mse_{cfg.tasks[idx]}'] = mse
                 metrics[f'ndcg_{cfg.tasks[idx]}'] = reg
             elif cfg.sce:
                 metrics[f'sce_{cfg.tasks[idx]}'] = reg

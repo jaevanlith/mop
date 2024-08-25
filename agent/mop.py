@@ -7,7 +7,7 @@ from torchmetrics.functional.retrieval import retrieval_normalized_dcg as ndcg
 
 class ActorMT(Actor):
     def __init__(self, state_dim, action_dim, hidden_dim=256, hidden_layers=1, max_action=1):
-        super().__init__(state_dim, action_dim, max_action)
+        super().__init__(state_dim, action_dim, hidden_dim, max_action)
         
         # Add an extra input feature for task id
         self.input_layer = nn.Linear(state_dim + 1, hidden_dim)
@@ -37,10 +37,10 @@ class ActorMT(Actor):
 
 class ActorMTND(ActorND):
     def __init__(self, state_dim, action_dim, max_action=1):
-        super().__init__(state_dim, action_dim, max_action)
+        super().__init__(state_dim, action_dim, max_action=max_action)
 
         # Add an extra input feature for task id
-        self.l1 = nn.Linear(state_dim + 1, 256)
+        self.l1 = nn.Linear(state_dim + 1, 400)
 
     def forward(self, state, task_id, suff_stats=False):
         # Concatenate state and task id
@@ -128,7 +128,7 @@ class MOP:
             self.criterion = self.kl_div
 
     
-    def kl_div(mu1, log_std1, mu2, log_std2):
+    def kl_div(self, mu1, log_std1, mu2, log_std2):
         # Compute variances
         var1 = torch.exp(log_std1) ** 2
         var2 = torch.exp(log_std2) ** 2
@@ -149,7 +149,7 @@ class MOP:
                     (mu2-mu1).unsqueeze(dim=1).matmul(cov2_inverse).matmul((mu2-mu1).unsqueeze(dim=1).transpose(-1, -2)).squeeze(dim=-1).squeeze(dim=-1) +
                     torch.log(torch.linalg.det(cov2) / torch.linalg.det(cov1)))
 
-        return kl
+        return kl.mean()
 
 
     def act(self, state, task_id, kendall=False):
@@ -195,7 +195,8 @@ class MOP:
                 _, activations_other = self.actor(state, task_id-1, analyse=True)
 
             for i in range(self.hidden_layers+1):
-                regularize += 1/(self.hidden_layers+1) * ndcg(activations_self[i], activations_other[i])
+                regularize += 1/(self.hidden_layers+1) * self.batch_ndcg(activations_self[i], activations_other[i])
+            regularize = -1*regularize
         elif self.sce and task_id==1:
             student_action, activations_self = self.actor(state, task_id, analyse=True)
             
@@ -220,7 +221,7 @@ class MOP:
                 teacher_action = torch.where(torch.gt(ct_q, t_q), ct_action, teacher_action)
 
             mse = self.criterion(student_action, teacher_action)
-            actor_loss = mse - self.ndcg_lambda * regularize
+            actor_loss = mse + self.ndcg_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
             mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
@@ -268,7 +269,7 @@ class MOP:
         elif mode == "c2a":
             return self.update_c2a(task_id, teacher, state)
         else:
-            raise ValueError("Invalid mode. Choose between 'actor' and 'critic'.")
+            raise ValueError(f"Invalid mode: {mode}. Choose between 'a2a' and 'c2a'.")
     
 
     def save(self, directory):
@@ -317,8 +318,10 @@ class MOP:
         return ndcg_sum / batch_size
     
 
-    def softmax_cross_entropy_loss(self, x, y):
+    def softmax_cross_entropy_loss(self, x, y, epsilon=1e-9):
         x_probs = F.softmax(x, dim=1)
         y_probs = F.softmax(y, dim=1)
+
+        y_probs = torch.clamp(y_probs, min=epsilon)
         
         return -torch.sum(x_probs * torch.log(y_probs), dim=1).mean()

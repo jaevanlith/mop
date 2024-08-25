@@ -10,12 +10,12 @@ from dm_control.utils import rewards
 
 
 class Actor(nn.Module):
-	def __init__(self, state_dim, action_dim, max_action=1):
+	def __init__(self, state_dim, action_dim, hidden_dim=256, max_action=1):
 		super(Actor, self).__init__()
 
-		self.l1 = nn.Linear(state_dim, 256)
-		self.l2 = nn.Linear(256, 256)
-		self.l3 = nn.Linear(256, action_dim)
+		self.l1 = nn.Linear(state_dim, hidden_dim)
+		self.l2 = nn.Linear(hidden_dim, hidden_dim)
+		self.l3 = nn.Linear(hidden_dim, action_dim)
 
 		self.max_action = max_action
 

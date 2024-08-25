@@ -90,8 +90,11 @@ def main(cfg):
 
 	# create agent
 	agent = hydra.utils.instantiate(cfg.agent,
-		obs_shape=env.observation_spec().shape, action_shape=env.action_spec().shape,
-	    num_expl_steps=0, deterministic_actor=cfg.deterministic_actor)
+									obs_shape=env.observation_spec().shape, 
+									action_shape=env.action_spec().shape,
+									hidden_dim=cfg.hidden_dim,
+	    							num_expl_steps=0,
+									deterministic_actor=cfg.deterministic_actor)
 
 	replay_dir_list = []
 
