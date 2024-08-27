@@ -220,10 +220,9 @@ def main(cfg):
                   cfg.agent.lr, 
                   cfg.agent.ensemble,
                   deterministic_actor=cfg.deterministic_actor,
-                  sce=cfg.sce,
-                  ndcg=cfg.ndcg,
-                  ndcg_alpha=cfg.ndcg_alpha,
-                  ndcg_lambda=cfg.ndcg_lambda)
+                  ranking_loss=cfg.ranking_loss,
+                  ranking_alpha=cfg.ranking_alpha,
+                  ranking_lambda=cfg.ranking_lambda)
 
     # Create video recorder
     video_recorder = VideoRecorder(work_dir if cfg.save_video else None)
@@ -260,11 +259,9 @@ def main(cfg):
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
-            if cfg.ndcg:
+            if cfg.ranking_loss is not None:
                 metrics[f'mse_{cfg.tasks[idx]}'] = mse
-                metrics[f'ndcg_{cfg.tasks[idx]}'] = reg
-            elif cfg.sce:
-                metrics[f'sce_{cfg.tasks[idx]}'] = reg
+                metrics[f'{cfg.ranking_loss}_{cfg.tasks[idx]}'] = reg
             
             if cfg.wandb:
                 wandb.log(metrics, step=global_step)

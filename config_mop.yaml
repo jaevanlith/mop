@@ -19,10 +19,9 @@ mode: a2a                                # critic2actor, actor2actor, critic2cri
 hidden_dim: 256
 hidden_layers: 1
 
-ndcg: False
-ndcg_lambda: 0.1
-ndcg_alpha: 0.5
-sce: False
+ranking_loss: None                     # ListNet, RankNet, None
+ranking_lambda: 0.1
+ranking_alpha: 0.5
 
 kendall: True
 noise_vars: []

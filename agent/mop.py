@@ -76,6 +76,34 @@ class CriticMT(Critic):
         q1 = F.relu(self.l2(q1))
         q1 = self.l3(q1)
         return q1
+    
+
+class ListNetLoss(nn.Module):
+    def __init__(self):
+        super(ListNetLoss, self).__init__()
+    
+    def forward(self, x, y):
+        P_x = F.softmax(x, dim=1)
+        P_y = F.softmax(y, dim=1)
+        
+        loss = -torch.sum(P_x * torch.log(P_y + 1e-10), dim=1)
+
+        return loss.mean()
+    
+
+class RankNetLoss(nn.Module):
+    def __init__(self):
+        super(RankNetLoss, self).__init__()
+
+    def forward(self, x, y):
+        assert x.shape == y.shape
+        
+        x_diff = x.unsqueeze(2) - x.unsqueeze(1)
+        y_diff = (y.unsqueeze(2) > y.unsqueeze(1)).float()
+        
+        loss = F.binary_cross_entropy_with_logits(x_diff, y_diff, reduction='none')
+        
+        return loss.sum(dim=[1, 2]).mean()
 
 
 class MOP:
@@ -88,21 +116,19 @@ class MOP:
                  lr,
                  ensemble,
                  deterministic_actor=True,
-                 sce=False,
-                 ndcg=False,
-                 ndcg_alpha=0.5,
-                 ndcg_lambda=0.1):
+                 ranking_loss=None,
+                 ranking_alpha=0.5,
+                 ranking_lambda=0.1):
         self.device = device
         self.lr = lr
         self.ensemble = ensemble
         self.max_action = 1.0
         self.hidden_layers = hidden_layers
 
-        # Init NDCG parameters
-        self.sce = sce
-        self.ndcg = ndcg
-        self.ndcg_alpha = ndcg_alpha
-        self.ndcg_lambda = ndcg_lambda
+        # Init ranking loss parameters
+        self.ranking_loss = ranking_loss
+        self.ranking_alpha = ranking_alpha
+        self.ranking_lambda = ranking_lambda
 
         # Init multi-task actor and its optimizer
         self.deterministic_actor = deterministic_actor
@@ -126,6 +152,16 @@ class MOP:
             self.criterion = nn.MSELoss()
         else:
             self.criterion = self.kl_div
+
+        # Init regularization term
+        if self.ranking_loss == "ListNet":
+            print("Regularizer set to: ListNet loss")
+            self.regularizer = ListNetLoss()
+        elif self.ranking_loss == "RankNet":
+            print("Regularizer set to: RankNet loss")
+            self.regularizer = RankNetLoss()
+        elif self.ranking_loss is not None:
+            raise ValueError(f"Invalid ranking loss: {self.ranking_loss}. Choose ListNet, RankNet, or None.")
 
     
     def kl_div(self, mu1, log_std1, mu2, log_std2):
@@ -188,23 +224,14 @@ class MOP:
         # Compute regularization term
         # Push task=1 to task=0
         regularize = torch.tensor(0.0, device=state.device, dtype=state.dtype)
-        if self.ndcg and task_id==1:
+        if self.ranking_loss is not None and task_id==1:
             student_action, activations_self = self.actor(state, task_id, analyse=True)
             
             with torch.no_grad():
                 _, activations_other = self.actor(state, task_id-1, analyse=True)
 
             for i in range(self.hidden_layers+1):
-                regularize += 1/(self.hidden_layers+1) * self.batch_ndcg(activations_self[i], activations_other[i])
-            regularize = -1*regularize
-        elif self.sce and task_id==1:
-            student_action, activations_self = self.actor(state, task_id, analyse=True)
-            
-            with torch.no_grad():
-                _, activations_other = self.actor(state, task_id-1, analyse=True)
-
-            for i in range(self.hidden_layers+1):
-                regularize += 1/(self.hidden_layers+1) * self.softmax_cross_entropy_loss(activations_self[i], activations_other[i])
+                regularize += 1/(self.hidden_layers+1) * self.regularizer(activations_self[i], activations_other[i])
         else:
             student_action = self.actor(state, task_id)
         
@@ -221,7 +248,7 @@ class MOP:
                 teacher_action = torch.where(torch.gt(ct_q, t_q), ct_action, teacher_action)
 
             mse = self.criterion(student_action, teacher_action)
-            actor_loss = mse + self.ndcg_lambda * regularize
+            actor_loss = mse + self.ranking_lambda * regularize
         else:
             mu, log_std = self.actor(state, task_id, suff_stats=True)
             mu_teacher, log_std_teacher = teacher.actor(state, suff_stats=True)
