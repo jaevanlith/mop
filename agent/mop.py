@@ -160,6 +160,8 @@ class MOP:
         elif self.ranking_loss == "RankNet":
             print("Regularizer set to: RankNet loss")
             self.regularizer = RankNetLoss()
+        elif self.ranking_loss == "None":
+            self.ranking_loss = None
         elif self.ranking_loss is not None:
             raise ValueError(f"Invalid ranking loss: {self.ranking_loss}. Choose ListNet, RankNet, or None.")
 
@@ -230,8 +232,11 @@ class MOP:
             with torch.no_grad():
                 _, activations_other = self.actor(state, task_id-1, analyse=True)
 
-            for i in range(self.hidden_layers+1):
-                regularize += 1/(self.hidden_layers+1) * self.regularizer(activations_self[i], activations_other[i])
+            if self.hidden_layers == 1:
+                regularize = self.ranking_alpha * self.regularizer(activations_self[0], activations_other[0]) + (1-self.ranking_alpha) * self.regularizer(activations_self[1], activations_other[1])
+            else:
+                for i in range(self.hidden_layers+1):
+                    regularize += 1/(self.hidden_layers+1) * self.regularizer(activations_self[i], activations_other[i])
         else:
             student_action = self.actor(state, task_id)
         
