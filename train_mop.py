@@ -85,6 +85,9 @@ def init_teacher_agent(cfg, work_dir, env, task_id, cross_teacher=False):
     
     agent.load(teacher_dir)
 
+    if cfg.mode == 'c2a':
+        agent.freeze_critics()
+
     return agent
 
 
@@ -259,7 +262,7 @@ def main(cfg):
             # Log metrics
             metrics = dict()
             metrics[f'actor_loss_{cfg.tasks[idx]}'] = actor_loss
-            if cfg.ranking_loss is not None:
+            if cfg.ranking_loss != "None":
                 metrics[f'mse_{cfg.tasks[idx]}'] = mse
                 metrics[f'{cfg.ranking_loss}_{cfg.tasks[idx]}'] = reg
             

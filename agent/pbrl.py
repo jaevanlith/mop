@@ -333,6 +333,7 @@ class PBRLAgent:
 
 		return metrics
 
+
 	def update(self, replay_iter, step, total_step):
 		metrics = dict()
 
@@ -361,6 +362,13 @@ class PBRLAgent:
 
 		return metrics
 	
+
+	def freeze_critics(self):
+		for c in self.critic:
+			for param in c.parameters():
+				param.requires_grad = False
+	
+
 	def save(self, directory, sub_dir="models"):
 		# Create directory if it doesn't exist
 		directory /= sub_dir
