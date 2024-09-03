@@ -12,6 +12,7 @@ tasks: [walker_walk, walker_stand]                # main task to train (relable 
 data_type: [medium, medium]              # dataset for data sharing (corresponding each share_task)
 share_data: False
 data_sharing: False
+data_shift: NOISE                       # None, NOISE, RANDOM90, RANDOM99
 
 teacher_dir: ../../teacher_models/${env}
 cross_teacher: False

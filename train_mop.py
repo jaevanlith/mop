@@ -41,7 +41,8 @@ def init_replay_buffer(cfg, task_id, work_dir, env, share=False):
         task = cfg.tasks[idx]
         data_type = cfg.data_type[idx]
         datasets_dir = work_dir / cfg.replay_buffer_dir
-        replay_dir = datasets_dir.resolve() / Path(task+"-td3-"+str(data_type)) / 'data'
+        data_shift = '' if cfg.data_shift == 'None' else f'_{cfg.data_shift}'
+        replay_dir = datasets_dir.resolve() / Path(task+"-td3-"+str(data_type)) / Path('data'+data_shift)
         print(f'replay dir: {replay_dir}')
         replay_dir_list.append(replay_dir)
 
