@@ -24,7 +24,7 @@ from collections import OrderedDict
 torch.backends.cudnn.benchmark = True
 
 
-def init_agent(env, cfg, dir, agent_name='td3'):
+def init_agent(env, cfg, dir, agent_name='pbrl'):
     if agent_name == 'pbrl':
         cfg.obs_shape = env.observation_spec().shape
         cfg.action_shape = env.action_spec().shape
@@ -105,10 +105,11 @@ class Workspace:
 
     def collect_data(self):
         collect_until_episode = utils.Until(self.cfg.num_collect_episodes)
-        step, episode, total_reward = 0, 0, 0
+        step, episode = 0, 0
 
         while collect_until_episode(episode):
             # reset env
+            total_reward = 0
             time_step = self.train_env.reset()
             meta = OrderedDict()
             self.replay_storage.add(time_step, meta, physics=self.train_env.physics.get_state())
@@ -118,6 +119,18 @@ class Workspace:
                 # sample action
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     action = self.agent.act(time_step.observation, step=self.global_step, eval_mode=True)
+
+                if self.cfg.noise:
+                    if episode/self.cfg.num_collect_episodes < 0.1:
+                        noise_var = 0
+                    elif episode/self.cfg.num_collect_episodes < 0.40:
+                        noise_var = 0.5
+                    else:
+                        noise_var = 1
+                    action += np.random.randn(*action.shape).astype(np.float32) * noise_var
+                elif self.cfg.random_percentage is not None:
+                    if episode/self.cfg.num_collect_episodes < self.cfg.random_percentage:
+                        action = np.random.uniform(-1, 1, size=action.shape).astype(np.float32)
 
                 # take env step
                 time_step = self.train_env.step(action)
@@ -133,12 +146,12 @@ class Workspace:
 
             # Log
             with self.logger.log_and_dump_ctx(self.global_step, ty='eval') as log:
-                log('episode_reward', total_reward / episode)
+                log('episode_reward', total_reward)
                 log('episode_length', step / episode)
-                log('episode', self.global_episode)
-                log('step', self.global_step)
+                log('episode', episode)
+                log('step', step)
             if self.cfg.use_wandb:
-                wandb.log({"eval_return": total_reward / episode})
+                wandb.log({"eval_return": total_reward})
 
 
 @hydra.main(config_path='.', config_name='collect_data_pbrl')

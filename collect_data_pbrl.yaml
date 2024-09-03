@@ -1,25 +1,28 @@
 defaults:
-  - agent: td3
+  - agent: pbrl
   - override hydra/launcher: submitit_local
 
 # mode
 # reward_free: false
 # task settings
-env: quadruped
-task: quadruped_escape
-data_type: expert
-agent_dir: ../../behavior_models/${env}/${task}/${data_type}
+env: walker
+task: walker_stand
+data_type: medium
+agent_dir: ../../teacher_models/${env}/${task}/${data_type}
 #obs_type: states             # [states, pixels]
 #frame_stack: 3               # only works if obs_type=pixels
 discount: 0.99
 # amount to collect
-num_collect_episodes: 2000
+num_collect_episodes: 1000
+# Policy noise
+noise: False
+random_percentage: 0.99
 
 # pretrained
 #snapshot_ts: 100000
 #snapshot_base_dir: ./pretrained_models
 # replay buffer
-replay_buffer_size: 2000000
+replay_buffer_size: 1000000
 replay_buffer_num_workers: 4
 batch_size: ${agent.batch_size}
 nstep: ${agent.nstep}
@@ -36,7 +39,7 @@ experiment: exp
 
 hydra:
   run:
-    dir: ./collect_td3/${task}-${data_type}-${now:%m-%d-%H-%M-%S}
+    dir: ./collect_pbrl/${task}-${data_type}-${now:%m-%d-%H-%M-%S}
 #    dir: ./collect/${task}-${agent.name}-medium-replay           # for collect_data_fixed, medium-replay
 #    dir: ./collect/${task}-${agent.name}-expert                  # for collect_data_fixed, expert
 #    dir: ./video/${task}-${agent.name}-video
